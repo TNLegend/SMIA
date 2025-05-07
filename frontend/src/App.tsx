@@ -24,6 +24,7 @@ import DocumentsList   from './pages/DocumentsList'
 import DocumentForm    from './pages/DocumentForm'
 import DocumentHistory from './pages/DocumentHistory'
 import DocumentView    from './pages/DocumentView'
+import EditProject   from './pages/EditProject'
 
 function PublicRoute({ children }: { children: JSX.Element }) {
   const { isAuthenticated } = useAuth()
@@ -92,6 +93,9 @@ function App() {
                   </Layout>
                 }
               />
+              <Route path="/projects/:id/edit" element={
+              <Layout darkMode={darkMode} toggleDarkMode={toggleDarkMode}> <EditProject/> </Layout>
+                }/>
               <Route
                 path="/projects/:id"
                 element={
