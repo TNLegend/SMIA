@@ -72,8 +72,10 @@ const LineChart = ({
             scales: {
               x: {
                 grid: {
-                  display: false,
-                  drawBorder: false,
+                  display: false,          // hide all grid lines
+                },
+                border: {
+                  display: false,          // hide the axis “border” line
                 },
                 ticks: {
                   color: theme.palette.text.secondary,
@@ -84,8 +86,11 @@ const LineChart = ({
               },
               y: {
                 grid: {
+                  // keep your horizontal grid lines
                   color: theme.palette.divider,
-                  drawBorder: false,
+                },
+                border: {
+                  display: false,          // hide the left/right border line
                 },
                 ticks: {
                   color: theme.palette.text.secondary,

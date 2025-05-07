@@ -101,7 +101,7 @@ const ProjectCard = ({
     return theme.palette.error.main;
   };
   
-  const getRiskIcon = (risk: string) => {
+  const getRiskIcon = (risk: string): JSX.Element | undefined => {
     switch (risk) {
       case 'low':
         return <CheckCircle size={16} />;
@@ -109,8 +109,7 @@ const ProjectCard = ({
         return <AlertTriangle size={16} />;
       case 'high':
         return <ShieldAlert size={16} />;
-      default:
-        return null;
+      
     }
   };
 

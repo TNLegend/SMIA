@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+sqlmodel
+pyjwt
+bcrypt
+python-dotenv
+python-multipart
+python-jose

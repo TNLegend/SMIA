@@ -1,5 +1,5 @@
-import { ReactNode, useState } from 'react';
-import { Box, useMediaQuery, useTheme } from '@mui/material';
+import React, { ReactNode, useState } from 'react';
+import Box from '@mui/material/Box';
 import Sidebar from './Sidebar';
 import Header from './Header';
 
@@ -9,10 +9,14 @@ interface LayoutProps {
   toggleDarkMode: () => void;
 }
 
-const Layout = ({ children, darkMode, toggleDarkMode }: LayoutProps) => {
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
+const drawerWidth = 240;
+
+const Layout: React.FC<LayoutProps> = ({
+  children,
+  darkMode,
+  toggleDarkMode
+}) => {
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
 
   const handleSidebarToggle = () => {
     setSidebarOpen(!sidebarOpen);
@@ -20,39 +24,25 @@ const Layout = ({ children, darkMode, toggleDarkMode }: LayoutProps) => {
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar 
-        open={sidebarOpen} 
+      <Sidebar
+        open={sidebarOpen}
         onClose={handleSidebarToggle}
-        variant={isMobile ? 'temporary' : 'permanent'}
+        variant="permanent"
       />
       <Box
         component="main"
         sx={{
           flexGrow: 1,
-          width: { sm: `calc(100% - ${sidebarOpen ? 240 : 0}px)` },
-          transition: theme.transitions.create(['width', 'margin'], {
-            easing: theme.transitions.easing.sharp,
-            duration: theme.transitions.duration.enteringScreen,
-          }),
+          width: { sm: `calc(100% - ${sidebarOpen ? drawerWidth : 0}px)` }
         }}
       >
-        <Header 
-          sidebarOpen={sidebarOpen} 
-          onSidebarToggle={handleSidebarToggle} 
+        <Header
+          sidebarOpen={sidebarOpen}
+          onSidebarToggle={handleSidebarToggle}
           darkMode={darkMode}
           toggleDarkMode={toggleDarkMode}
         />
-        <Box 
-          sx={{ 
-            p: 3, 
-            pt: 10,
-            transition: 'all 0.3s ease',
-            backgroundColor: theme.palette.background.default,
-            minHeight: 'calc(100vh - 64px)'
-          }}
-        >
-          {children}
-        </Box>
+        <Box sx={{ p: 3, pt: 10 }}>{children}</Box>
       </Box>
     </Box>
   );
