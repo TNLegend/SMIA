@@ -1,31 +1,33 @@
-// src/pages/EditProject.tsx
-import React, { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box, Typography, Button, TextField, Grid,
   MenuItem, FormControl, InputLabel, Select,
   CircularProgress, Paper
-} from '@mui/material'
-import { ArrowLeft, Check, X } from 'lucide-react'
-import { useAuth } from '../context/AuthContext'
+} from '@mui/material';
+import { ArrowLeft, Check, X } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 interface Payload {
-  name: string
-  description: string
-  category: string
-  status: 'draft'|'active'|'completed'|'on-hold'
+  title: string;          // <-- renamed
+  description: string;
+  category: string;
+  status: 'draft'|'active'|'completed'|'on-hold';
 }
 
 export default function EditProject() {
-  const { id } = useParams<{id:string}>()
-  const { token, logout } = useAuth()
-  const navigate = useNavigate()
+  const { id } = useParams<{id:string}>();
+  const { token, logout } = useAuth();
+  const navigate = useNavigate();
 
   const [pl, setPl] = useState<Payload>({
-    name: '', description: '', category: 'Marketing', status: 'draft'
-  })
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string|null>(null)
+    title: '',            // <-- renamed
+    description: '',
+    category: 'Marketing',
+    status: 'draft'
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string|null>(null);
 
   // 1) fetch existing project
   useEffect(() => {
@@ -33,29 +35,29 @@ export default function EditProject() {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(r => {
-        if (r.status === 401) { logout(); throw new Error('Session expirée') }
-        if (!r.ok) throw new Error(`Erreur ${r.status}`)
-        return r.json()
+        if (r.status === 401) { logout(); throw new Error('Session expirée'); }
+        if (!r.ok) throw new Error(`Erreur ${r.status}`);
+        return r.json();
       })
       .then(data => {
         setPl({
-          name: data.name,
+          title: data.title,           // <-- renamed
           description: data.description,
           category: data.category,
           status: data.status
-        })
+        });
       })
       .catch(e => setError(e.message))
-      .finally(() => setLoading(false))
-  }, [id, token, logout])
+      .finally(() => setLoading(false));
+  }, [id, token, logout]);
 
-  const handleChange = (e:any) =>
-    setPl(p => ({ ...p, [e.target.name]: e.target.value }))
+  const handleChange = (e: any) =>
+    setPl(p => ({ ...p, [e.target.name]: e.target.value }));
 
   // 2) submit PUT
   const submit = async () => {
-    setLoading(true)
-    setError(null)
+    setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`http://127.0.0.1:8000/projects/${id}`, {
         method: 'PUT',
@@ -64,17 +66,17 @@ export default function EditProject() {
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify(pl)
-      })
-      if (res.status === 401) { logout(); return }
-      if (!res.ok) throw new Error(await res.text())
-      const data = await res.json()
-      navigate(`/projects/${data.id}`)
-    } catch(err:any) {
-      setError(err.message)
+      });
+      if (res.status === 401) { logout(); return; }
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      navigate(`/projects/${data.id}`);
+    } catch(err: any) {
+      setError(err.message);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <Box>
@@ -99,24 +101,30 @@ export default function EditProject() {
         <Grid container spacing={3}>
           <Grid item xs={12}>
             <TextField
-              name="name" label="Nom du projet"
+              name="title"               // <-- renamed
+              label="Titre du projet"
               fullWidth required
-              value={pl.name} onChange={handleChange}
+              value={pl.title}
+              onChange={handleChange}
             />
           </Grid>
           <Grid item xs={12}>
             <TextField
-              name="description" label="Description"
+              name="description"
+              label="Description"
               multiline rows={4} fullWidth required
-              value={pl.description} onChange={handleChange}
+              value={pl.description}
+              onChange={handleChange}
             />
           </Grid>
           <Grid item xs={12} sm={6}>
             <FormControl fullWidth required>
               <InputLabel>Catégorie</InputLabel>
               <Select
-                name="category" label="Catégorie"
-                value={pl.category} onChange={handleChange}
+                name="category"
+                label="Catégorie"
+                value={pl.category}
+                onChange={handleChange}
               >
                 <MenuItem value="Marketing">Marketing</MenuItem>
                 <MenuItem value="Production">Production</MenuItem>
@@ -129,8 +137,10 @@ export default function EditProject() {
             <FormControl fullWidth required>
               <InputLabel>Statut</InputLabel>
               <Select
-                name="status" label="Statut"
-                value={pl.status} onChange={handleChange}
+                name="status"
+                label="Statut"
+                value={pl.status}
+                onChange={handleChange}
               >
                 <MenuItem value="draft">Brouillon</MenuItem>
                 <MenuItem value="active">Actif</MenuItem>
@@ -156,5 +166,5 @@ export default function EditProject() {
         </Box>
       </Paper>
     </Box>
-  )
+  );
 }

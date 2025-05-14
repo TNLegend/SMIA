@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box, Typography, Button, TextField, Grid,
@@ -9,10 +9,10 @@ import { ArrowLeft, Check, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 interface NewProjectPayload {
-  name: string;
+  title: string;
   description: string;
   category: string;
-  status: 'draft'|'active'|'completed'|'on-hold';
+  status: 'draft' | 'active' | 'completed' | 'on-hold';
 }
 
 export default function NewProject() {
@@ -20,35 +20,45 @@ export default function NewProject() {
   const navigate = useNavigate();
 
   const [payload, setPayload] = useState<NewProjectPayload>({
-    name: '', description:'', category:'', status:'draft'
+    title: '',
+    description: '',
+    category: '',
+    status: 'draft'
   });
-  const [loading, setLoading] = useState(false);
-  const [error, setError]   = useState<string|null>(null);
 
-  const handleChange = (e:any) => {
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | any) => {
     setPayload({ ...payload, [e.target.name]: e.target.value });
   };
 
   const submit = async () => {
     setLoading(true);
     setError(null);
+
     try {
+      // Étape 1 : création du projet
       const res = await fetch('http://127.0.0.1:8000/projects/', {
         method: 'POST',
         headers: {
-          'Content-Type':'application/json',
+          'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify(payload)
       });
-      if (res.status===401) {
+
+      if (res.status === 401) {
         logout();
         return;
       }
+
       if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      navigate(`/projects/${data.id}`);
-    } catch (err:any) {
+      const project = await res.json();
+
+      navigate(`/projects/${project.id}`);
+    } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
@@ -58,20 +68,20 @@ export default function NewProject() {
   return (
     <Box>
       <Box display="flex" alignItems="center" mb={4}>
-        <Button startIcon={<ArrowLeft/>} onClick={()=>navigate(-1)} sx={{mr:2}}>Retour</Button>
+        <Button startIcon={<ArrowLeft />} onClick={() => navigate(-1)} sx={{ mr: 2 }}>
+          Retour
+        </Button>
         <Typography variant="h4">Nouveau projet</Typography>
       </Box>
 
-      <Paper sx={{ p:4, position:'relative' }}>
+      <Paper sx={{ p: 4, position: 'relative' }}>
         {loading && (
-          <Box
-            sx={{
-              position:'absolute', inset:0,
-              bgcolor:'rgba(255,255,255,0.7)',
-              display:'flex', alignItems:'center', justifyContent:'center'
-            }}
-          >
-            <CircularProgress/>
+          <Box sx={{
+            position: 'absolute', inset: 0,
+            bgcolor: 'rgba(255,255,255,0.7)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>
+            <CircularProgress />
           </Box>
         )}
 
@@ -80,18 +90,24 @@ export default function NewProject() {
         <Grid container spacing={3}>
           <Grid item xs={12}>
             <TextField
-              name="name" label="Nom du projet"
-              value={payload.name} onChange={handleChange}
+              name="title"
+              label="Titre du projet"
+              value={payload.title}
+              onChange={handleChange}
               fullWidth required
             />
           </Grid>
+
           <Grid item xs={12}>
             <TextField
-              name="description" label="Description"
-              value={payload.description} onChange={handleChange}
+              name="description"
+              label="Description"
+              value={payload.description}
+              onChange={handleChange}
               fullWidth multiline rows={4} required
             />
           </Grid>
+
           <Grid item xs={12} sm={6}>
             <FormControl fullWidth required>
               <InputLabel>Catégorie</InputLabel>
@@ -108,6 +124,7 @@ export default function NewProject() {
               </Select>
             </FormControl>
           </Grid>
+
           <Grid item xs={12} sm={6}>
             <FormControl fullWidth required>
               <InputLabel>Statut</InputLabel>
@@ -119,7 +136,7 @@ export default function NewProject() {
               >
                 <MenuItem value="draft">Brouillon</MenuItem>
                 <MenuItem value="active">Actif</MenuItem>
-                <MenuItem value="completed">Termin&eacute;</MenuItem>
+                <MenuItem value="completed">Terminé</MenuItem>
                 <MenuItem value="on-hold">En pause</MenuItem>
               </Select>
             </FormControl>
@@ -127,10 +144,10 @@ export default function NewProject() {
         </Grid>
 
         <Box display="flex" justifyContent="flex-end" gap={2} mt={4}>
-          <Button startIcon={<X/>} onClick={()=>navigate(-1)} disabled={loading}>
+          <Button startIcon={<X />} onClick={() => navigate(-1)} disabled={loading}>
             Annuler
           </Button>
-          <Button variant="contained" endIcon={<Check/>} onClick={submit} disabled={loading}>
+          <Button variant="contained" endIcon={<Check />} onClick={submit} disabled={loading}>
             Créer
           </Button>
         </Box>

@@ -1,8 +1,17 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Box, Typography, Button, TextField, InputAdornment,
-  Grid, Tabs, Tab, Chip, CircularProgress, useTheme
+  Box,
+  Typography,
+  Button,
+  TextField,
+  InputAdornment,
+  Grid,
+  Tabs,
+  Tab,
+  CircularProgress,
+  useTheme,
+  Pagination
 } from '@mui/material'
 import { Plus, Search, List as ListIcon, Grid as GridIcon } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
@@ -14,16 +23,18 @@ export default function Projects() {
   const { token, logout } = useAuth()
 
   const [projects, setProjects] = useState<ProjectCardProps[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState<string>()
+  const [loading, setLoading]   = useState(true)
+  const [error, setError]       = useState<string>()
 
-  // UI
-  const [search, setSearch] = useState('')
-  const [viewMode, setViewMode] = useState<'grid'|'list'>('grid')
-  const [tabValue, setTabValue] = useState(0)
+  // UI controls
+  const [search, setSearch]       = useState('')
+  const [viewMode, setViewMode]   = useState<'grid'|'list'>('grid')
+  const [tabValue, setTabValue]   = useState(0)
+  const [page, setPage]           = useState(1)
+  const perPage                   = 6
 
   useEffect(() => {
-    fetch('http://127.0.0.1:8000/projects', {
+    fetch(`http://127.0.0.1:8000/projects?skip=${(page-1)*perPage}&limit=${perPage}`, {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(res => {
@@ -32,17 +43,23 @@ export default function Projects() {
         return res.json()
       })
       .then((data: ProjectCardProps[]) => setProjects(data))
-      .catch(err => setError(err.message))
+      .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [token, logout])
+  }, [token, logout, page])
+
+  // Reset to first page when search or tab changes
+  useEffect(() => {
+    setPage(1)
+  }, [search, tabValue])
 
   const filtered = projects.filter(p => {
-    if (tabValue === 1 && p.status !== 'active')   return false
-    if (tabValue === 2 && p.status !== 'completed')return false
-    if (tabValue === 3 && p.status !== 'on-hold')  return false
+    if (tabValue === 1 && p.status !== 'active')    return false
+    if (tabValue === 2 && p.status !== 'completed') return false
+    if (tabValue === 3 && p.status !== 'on-hold')   return false
     if (search) {
       const q = search.toLowerCase()
-      if (![p.title,p.description,p.category,p.owner].some(f=>f.toLowerCase().includes(q)))
+      if (![p.title, p.description, p.category, p.owner]
+            .some(f => f.toLowerCase().includes(q)))
         return false
     }
     return true
@@ -59,23 +76,20 @@ export default function Projects() {
           variant="contained"
           startIcon={<Plus/>}
           onClick={()=>navigate('/projects/new')}
-        >
-          Nouveau projet
-        </Button>
+        >Nouveau projet</Button>
       </Box>
 
       <Box mb={2} display="flex" gap={2} flexWrap="wrap">
         <TextField
           placeholder="Rechercher…"
           value={search}
-          onChange={e=>setSearch(e.target.value)}
+          onChange={e => setSearch(e.target.value)}
           InputProps={{
             startAdornment: <InputAdornment position="start"><Search/></InputAdornment>
           }}
           sx={{ width: 300 }}
         />
-
-        <Box sx={{ ml:'auto', display:'flex', gap:1 }}>
+        <Box sx={{ ml: 'auto', display: 'flex', gap: 1 }}>
           <Button
             variant={viewMode==='grid'?'contained':'outlined'}
             onClick={()=>setViewMode('grid')}
@@ -87,7 +101,7 @@ export default function Projects() {
         </Box>
       </Box>
 
-      <Tabs value={tabValue} onChange={(_,v)=>setTabValue(v)} sx={{ mb:2 }}>
+      <Tabs value={tabValue} onChange={(_, v)=>setTabValue(v)} sx={{ mb:2 }}>
         <Tab label="Tous"/>
         <Tab label="Actifs"/>
         <Tab label="Terminés"/>
@@ -95,7 +109,7 @@ export default function Projects() {
       </Tabs>
 
       <Grid container spacing={3}>
-        {filtered.map(p=>(
+        {filtered.map(p => (
           <Grid
             item
             key={p.id}
@@ -111,6 +125,17 @@ export default function Projects() {
       {filtered.length === 0 && (
         <Box textAlign="center" py={8}>
           <Typography variant="h6">Aucun projet trouvé</Typography>
+        </Box>
+      )}
+
+      {filtered.length > perPage && (
+        <Box display="flex" justifyContent="center" mt={4}>
+          <Pagination
+            count={Math.ceil(filtered.length / perPage)}
+            page={page}
+            onChange={(_, v) => setPage(v)}
+            color="primary"
+          />
         </Box>
       )}
     </Box>

@@ -25,7 +25,6 @@ import DocumentForm    from './pages/DocumentForm'
 import DocumentHistory from './pages/DocumentHistory'
 import DocumentView    from './pages/DocumentView'
 import EditProject   from './pages/EditProject'
-
 function PublicRoute({ children }: { children: JSX.Element }) {
   const { isAuthenticated } = useAuth()
   return isAuthenticated ? <Navigate to="/dashboard" replace /> : children
@@ -104,6 +103,7 @@ function App() {
                   </Layout>
                 }
               />
+
 
               <Route
                 path="/policy"

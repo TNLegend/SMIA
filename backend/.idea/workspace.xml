@@ -5,10 +5,154 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="9030c45e-6645-43ce-bf6a-f139c4401330" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/app.zip" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/app/routers/models.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/1.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/10.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/100.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/101.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/102.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/103.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/104.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/105.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/106.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/107.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/108.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/109.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/11.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/110.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/111.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/112.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/113.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/114.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/115.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/116.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/117.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/118.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/119.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/12.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/120.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/121.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/122.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/123.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/124.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/125.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/126.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/127.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/128.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/129.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/13.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/130.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/131.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/132.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/14.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/15.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/16.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/17.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/18.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/19.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/2.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/20.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/21.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/22.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/23.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/24.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/25.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/26.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/27.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/28.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/29.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/3.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/30.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/31.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/32.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/33.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/34.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/35.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/36.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/37.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/38.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/39.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/4.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/40.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/41.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/42.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/43.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/44.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/45.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/46.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/47.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/48.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/49.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/5.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/50.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/51.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/52.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/53.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/54.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/55.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/56.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/57.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/58.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/59.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/6.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/60.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/61.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/62.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/63.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/64.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/65.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/66.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/67.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/68.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/69.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/7.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/70.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/71.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/72.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/73.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/74.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/75.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/76.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/77.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/78.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/79.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/8.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/80.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/81.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/82.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/83.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/84.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/85.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/86.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/87.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/88.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/89.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/9.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/90.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/91.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/92.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/93.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/94.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/95.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/96.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/97.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/98.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/documents/99.docx" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/config/iso42001_requirements.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/db.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/db.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/main.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/models.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/models.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/routers/documents.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/routers/documents.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/routers/projects.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/routers/projects.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/smia.db" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/smia.db" beforeDir="false" afterPath="$PROJECT_DIR$/smia.db" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../brouillon_rapport2.doc" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/../frontend/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/package-lock.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../frontend/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/package.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../frontend/src/App.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/src/App.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../frontend/src/pages/EditProject.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/src/pages/EditProject.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../frontend/src/pages/NewProject.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/src/pages/NewProject.tsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../frontend/src/pages/ProjectDetail.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/src/pages/ProjectDetail.tsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../frontend/src/pages/Projects.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/src/pages/Projects.tsx" afterDir="false" />
     </list>
@@ -35,15 +179,15 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Python.main.executor": "Run",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "git-widget-placeholder": "main",
-    "last_opened_file_path": "D:/cours/SMIA/backend",
-    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Python.main.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;last_opened_file_path&quot;: &quot;D:/cours/SMIA/backend&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="D:\cours\SMIA\backend\app\routers" />

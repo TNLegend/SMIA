@@ -48,7 +48,7 @@ def create_document(
             created_by=doc.created_by,
         ))
         sess.commit()
-        return doc
+        return DocumentRead.from_orm(doc)
 
 
 @router.post("/upload-pdf", response_model=DocumentRead, status_code=status.HTTP_201_CREATED)
@@ -79,13 +79,15 @@ async def upload_pdf(
             created_by=doc.created_by,
         ))
         sess.commit()
-        return doc
+        return DocumentRead.from_orm(doc)
 
 
 @router.get("/", response_model=List[DocumentRead])
 def list_documents(current_user: User = Depends(get_current_user)):
     with SessionLocal() as sess:
-        return sess.exec(select(Document)).all()
+        docs = sess.exec(select(Document)).all()
+        # ✅ convert each row into its Pydantic model
+        return [DocumentRead.from_orm(d) for d in docs]
 
 
 @router.get("/{doc_id}", response_model=DocumentRead)
@@ -94,7 +96,8 @@ def read_document(doc_id: int, current_user: User = Depends(get_current_user)):
         doc = sess.get(Document, doc_id)
         if not doc:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
-        return doc
+        # ✅ convert before session closes
+        return DocumentRead.from_orm(doc)
 
 
 @router.get("/{doc_id}/images/{img_id}")
@@ -156,7 +159,7 @@ def update_document(
             created_by=doc.created_by,
         ))
         sess.commit()
-        return doc
+        return DocumentRead.from_orm(doc)
 
 
 @router.get("/{doc_id}/history", response_model=List[DocumentHistory])
@@ -165,11 +168,13 @@ def history_document(
     current_user: User = Depends(get_current_user),
 ):
     with SessionLocal() as sess:
-        return sess.exec(
+        rows = sess.exec(
             select(DocumentHistory)
             .where(DocumentHistory.document_id == doc_id)
             .order_by(DocumentHistory.version)
         ).all()
+        # ✅ convert each history row into its Pydantic schema
+        return [DocumentHistory.from_orm(r) for r in rows]
 
 
 @router.delete("/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
