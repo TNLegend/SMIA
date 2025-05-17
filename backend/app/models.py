@@ -1,11 +1,14 @@
+#app/models.py
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Callable
 from uuid import uuid4
 
-from sqlalchemy import Column, LargeBinary, UniqueConstraint
+from pydantic import BaseModel
+from sqlalchemy import Column, LargeBinary, UniqueConstraint, ForeignKey
 from sqlalchemy.dialects.sqlite import JSON as SQLiteJSON
 from sqlalchemy.ext.mutable import MutableList
 from sqlmodel import Field, SQLModel, Relationship
+
 
 # ─────── USERS ───────
 
@@ -139,11 +142,31 @@ class AIProject(AIProjectBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-
     checklist_items: List["ISO42001ChecklistItem"] = Relationship(
-        back_populates="project"
+        back_populates="project",
+        sa_relationship_kwargs={
+            "cascade": "all, delete-orphan",  # ← UNIQUEMENT ICI
+            "single_parent": True  # ← requis avec delete-orphan
+        },
     )
-    model_runs: List["ModelRun"] = Relationship(back_populates="project")
+    model_runs: List["ModelRun"] = Relationship(
+        back_populates="project",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "single_parent": True},
+    )
+    datasets: List["DataSet"] = Relationship(
+        back_populates="project",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "single_parent": True},
+    )
+    evaluation_runs: List["EvaluationRun"] = Relationship(
+        back_populates="project",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "single_parent": True},
+    )
+    artifacts: List["ModelArtifact"] = Relationship(
+        back_populates="project",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "single_parent": True},
+    )
+
+
 
 class AIProjectCreate(AIProjectBase):
     pass
@@ -185,6 +208,10 @@ class ISO42001ChecklistItem(SQLModel, table=True):
     )
     observations: List[Optional[str]] = Field(
         default_factory=list, sa_column=Column(MutableList.as_mutable(SQLiteJSON))
+    )
+    actions_correctives: List["ActionCorrective"] = Relationship(
+    back_populates = "checklist_item",
+    sa_relationship_kwargs = {"cascade": "all, delete-orphan", "single_parent": True},
     )
     status: str
     result: str
@@ -237,6 +264,9 @@ class ActionCorrective(SQLModel, table=True):
     checklist_item_id: int = Field(foreign_key="iso42001checklistitem.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+    checklist_item: "ISO42001ChecklistItem" = Relationship(
+    back_populates = "actions_correctives"
+    )
 
 #----------MODEL RUNS-------------
 
@@ -249,3 +279,84 @@ class ModelRun(SQLModel, table=True):
     status: str  # "pending"|"running"|"succeeded"|"failed"
     logs: Optional[str] = None
     project: AIProject = Relationship(back_populates="model_runs")
+    artifacts: List["ModelArtifact"] = Relationship(
+    back_populates = "run",
+    sa_relationship_kwargs = {"cascade": "all, delete-orphan", "single_parent": True},
+    )
+
+class DataSet(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="aiproject.id", index=True)
+    kind: str                     # "train" | "test"
+    path: str                     # chemin absolu sur disque
+    uploaded_at: datetime = Field(default_factory=datetime.utcnow)
+    columns: List[str] = Field(sa_column=Column(SQLiteJSON))
+
+    project: "AIProject" = Relationship(
+        back_populates="datasets",
+        sa_relationship_kwargs={
+            "cascade": "all, delete-orphan",
+            "single_parent": True
+        }
+    )
+    config: Optional["DataConfig"] = Relationship(
+        back_populates="dataset",
+        sa_relationship_kwargs={
+            "cascade": "all, delete-orphan",
+            "single_parent": True,
+            "uselist": False,
+        }
+    )
+
+
+
+class DataConfig(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    # ondelete="CASCADE" pour que, au niveau SQL, la suppression du DataSet supprime aussi le DataConfig
+    dataset_id: int = Field(
+        sa_column=Column(
+            ForeignKey("dataset.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    features: List[str] = Field(sa_column=Column(SQLiteJSON))
+    target: str
+    sensitive_attrs: List[str] = Field(sa_column=Column(SQLiteJSON))
+
+    dataset: DataSet = Relationship(
+        back_populates="config"
+    )
+
+class DataConfigCreate(BaseModel):
+    dataset_id: int
+    features: List[str] = Field(min_items=1)
+    target: str
+    sensitive_attrs: List[str] = Field(default_factory=list)
+
+
+class EvaluationRun(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="aiproject.id", index=True)
+    model_run_id: int = Field(foreign_key="modelrun.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    status: str  # pending | running | succeeded | failed
+    metrics: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(SQLiteJSON))
+    logs: Optional[str] = None
+
+    project: "AIProject" = Relationship(back_populates="evaluation_runs")
+
+
+class ModelArtifact(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="aiproject.id", index=True)
+    model_run_id: int = Field(foreign_key="modelrun.id")
+    path: str  # chemin absolu
+    format: str  # 'pt', 'joblib', 'onnx', …
+    size_bytes: int
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    metrics: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(SQLiteJSON))
+
+    project: "AIProject" = Relationship(back_populates="artifacts")
+    run: "ModelRun" = Relationship(back_populates="artifacts")

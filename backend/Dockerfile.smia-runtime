@@ -1,0 +1,15 @@
+# backend/Dockerfile.smia-runtime
+FROM python:3.11-slim
+WORKDIR /app
+
+# BLAS/compilation pour scikit-learn & shap
+RUN apt-get update && apt-get install -y build-essential g++ && rm -rf /var/lib/apt/lists/*
+
+# on ne copie que les deps ML pour maximiser le cache
+COPY requirements-ml.txt .
+
+# installe une bonne fois pour toutes
+RUN pip install --no-cache-dir -r requirements-ml.txt
+
+# point d’entrée par défaut
+ENTRYPOINT ["python"]

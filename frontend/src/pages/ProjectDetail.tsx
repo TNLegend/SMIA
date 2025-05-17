@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, Link as RouterLink, useNavigate } from 'react-router-dom'
 import {
   Box,
@@ -42,6 +42,7 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Autocomplete,
 } from '@mui/material'
 import {
   Home,
@@ -58,7 +59,46 @@ import {
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import PieChart from '../components/charts/PieChart'
 import { useAuth } from '../context/AuthContext'
+import { useAuthFetch } from '../utils/authFetch';
+import { useDropzone, type FileRejection, type DropzoneOptions } from 'react-dropzone';
+import { EventSourcePolyfill } from 'event-source-polyfill';
 
+// -------------------------- DropArea util --------------------------
+interface DropAreaProps {
+  onDrop: (accepted: File[], rej: FileRejection[]) => void;
+  accept: DropzoneOptions['accept'];
+  placeholder: string;
+  multiple?: boolean;
+}
+const dropStyle = {
+  p: 4,
+  border: '2px dashed',
+  borderColor: 'divider',
+  textAlign: 'center',
+  cursor: 'pointer',
+};
+function DropArea({ onDrop, accept, placeholder, multiple = false }: DropAreaProps) {
+  const { getRootProps, getInputProps, fileRejections, acceptedFiles } =
+    useDropzone({ onDrop, accept, multiple });
+  return (
+    <>
+      <Box {...getRootProps()} sx={dropStyle}>
+        <input {...getInputProps()} />
+        <Typography>{placeholder}</Typography>
+      </Box>
+      {fileRejections.length > 0 && (
+        <Typography color="error" sx={{ mt: 1 }}>
+          Type de fichier non accepté.
+        </Typography>
+      )}
+      {acceptedFiles.length > 0 && (
+        <Typography sx={{ mt: 1 }}>
+          Fichier sélectionné : {acceptedFiles[0].name}
+        </Typography>
+      )}
+    </>
+  );
+}
 /* Traductions */
 const STATUS_LABELS: Record<string, string> = {
   'to-do': 'À faire',
@@ -149,6 +189,7 @@ export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { token, logout } = useAuth()
+  const authFetch = useAuthFetch();
   if (!token) { logout(); return null }
   const t = token
 
@@ -162,17 +203,83 @@ export default function ProjectDetail() {
 
   /* état principal */
   const [project, setProject] = useState<ProjectDetailAPI | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState<boolean>(true)
   const [error, setError] = useState<string>()
+  
   const [tab, setTab] = useState(0)
 
   /* commentaires */
   const [newComment, setNewComment] = useState('')
   const [editId, setEditId] = useState<string | null>(null)
   const [editContent, setEditContent] = useState('')
+  const refreshComments = async () => {
+    try {
+      const r = await fetch(`http://127.0.0.1:8000/projects/${id}/comments`, {
+        headers:{ Authorization:`Bearer ${t}` }
+      })
+      if(r.status===401){ logout(); return }
+      if(!r.ok) throw new Error()
+      const data:Comment[] = await r.json()
+      setProject(p=>p && ({...p, comments:data}))
+    } catch{}
+  }
 
   /* checklist */
   const [checklist, setChecklist] = useState<ISO42001ChecklistItem[]>([])
+  const recalcScores = (list: ISO42001ChecklistItem[]) => {
+    const total = list.reduce((s,i)=>s + i.audit_questions.length,0)
+    const done  = list.reduce((s,i)=>s + i.statuses.filter(x=>x==='done').length,0)
+    const comp  = list.reduce((s,i)=>s + i.results.filter(x=>x==='compliant').length,0)
+    setProject(p=>p && ({
+      ...p,
+      progress: Math.round(done/total*100),
+      complianceScore: Math.round(comp/total*100)
+    }))
+  }
+
+ const fetchChecklist = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/projects/${id}/checklist`, {
+        headers: { Authorization: `Bearer ${t}` }
+      })
+
+      if (res.status === 401) {
+        logout()
+        return
+      }
+      if (!res.ok) {
+        throw new Error(`Impossible de charger la checklist (code ${res.status})`)
+      }
+
+      const raw = await res.json() as any[]
+      const mapped = raw.map(i => ({
+        id: String(i.id),
+        control_id: i.control_id,
+        control_name: i.control_name,
+        description: i.description,
+        audit_questions: i.audit_questions,
+        evidence_required: i.evidence_required,
+        statuses: i.statuses ?? Array(i.audit_questions.length).fill(i.status),
+        results: i.results ?? Array(i.audit_questions.length).fill(i.result),
+        observations: i.observations ?? Array(i.audit_questions.length).fill(i.observation),
+      }))
+
+      setChecklist(mapped)
+      recalcScores(mapped)
+    } catch (e: any) {
+      setError(e.message || 'Erreur inconnue lors du chargement de la checklist')
+    } finally {
+      setLoading(false)
+    }
+  }, [id, t, logout, recalcScores])
+
+  useEffect(() => { if(tab===3) fetchChecklist() }, [tab,id,t])
+
+useEffect(() => {
+if (project) return
+refreshComments()
+}, [project])
 
   /* dialogue évaluation */
   const [dlgOpen, setDlgOpen] = useState(false)
@@ -183,6 +290,285 @@ export default function ProjectDetail() {
   const [formObs, setFormObs] = useState('')
   const [proofs, setProofs] = useState<ProofLink[]>([])
   const [files, setFiles] = useState<Record<string,File>>({})
+    async function loadProofs(itemId:string, qIdx:number){
+    try {
+      const r = await fetch(
+        `http://127.0.0.1:8000/projects/${id}/checklist/${itemId}/questions/${qIdx}/proofs`,
+        { headers:{ Authorization:`Bearer ${t}` } }
+      )
+      if(r.status===401){ logout(); return }
+      if(!r.ok){ setProofs([]); return }
+      setProofs(await r.json())
+    } catch{
+      setProofs([])
+    }
+  }
+
+  // Stepper state
+  const steps = [
+    'Importer le modèle',
+    'Dataset entraînement',
+    'Features / Target',
+    'Config YAML',
+    'Entraînement',
+    'Dataset test',
+    'Évaluation'
+  ];
+  const [activeStep, setActiveStep] = useState(0);
+
+  const isStepReady = (step: number): boolean => {
+    switch (step) {
+      case 0:
+        return modelFiles.length > 0;
+      case 1:
+        return trainDatasetId !== null && datasetColumns.length > 0;
+      case 2:
+        return !!selectedTarget && selectedFeatures.length > 0;
+      case 3:
+        return true;              // rien à valider de plus ici
+      case 4:
+        return trainingFinished;
+      case 5:
+        return testDatasetColumns.length > 0;
+      case 6:
+        return evalFinished;
+      default:
+        return false;
+    }
+  };
+
+  /** handlers globaux afin de ne pas dupliquer */
+  const handleNext = () => setActiveStep((s) => (s < steps.length - 1 ? s + 1 : s));
+  const handleBack = () => setActiveStep((s) => (s > 0 ? s - 1 : s));
+
+  /* Model files upload */
+  const [modelFiles, setModelFiles] = useState<string[]>([]);
+  const [zipError, setZipError] = useState<string>();
+  const onDrop = async (
+  acceptedFiles: File[],
+  fileRejections: FileRejection[]
+) => {
+  /* 1) Rejet immédiat par Dropzone */
+  if (fileRejections.length > 0) {
+    setZipError('Seuls les fichiers .zip sont acceptés.')
+    return
+  }
+
+  /* 2) Fichier retenu */
+  const file = acceptedFiles[0]
+  if (!file) return
+
+  /* 3) Double-check de l’extension */
+  if (!file.name.toLowerCase().endsWith('.zip')) {
+    setZipError('Seuls les fichiers .zip sont acceptés.')
+    return
+  }
+
+  setZipError(undefined)
+  setLoading(true)
+
+  /* 4) Prépare un FormData → champ « zip_file » */
+  const form = new FormData()
+  form.append('zip_file', file, file.name) // <-- le nom du champ DOIT être zip_file
+
+  try {
+    /* ───── 1. Vérification du template ───── */
+    let res = await authFetch(
+      `http://127.0.0.1:8000/projects/${id}/model/template/check`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }, // on NE fixe PAS Content-Type
+        body: form,
+      }
+    )
+
+    const checkJson = await res.json()
+    if (!checkJson.ok) {
+      setZipError(
+        `Fichiers manquants : ${checkJson.missing_files.join(
+          ', '
+        )} ; fonction(s) manquante(s) : ${checkJson.missing_functions.join(', ')}`
+      )
+      return
+    }
+
+    /* ───── 2. Upload définitif ───── */
+    res = await authFetch(
+      `http://127.0.0.1:8000/projects/${id}/model/upload_model`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form, // on ré-envoie exactement le même FormData
+      }
+    )
+
+    const uploadJson = await res.json()
+    if (!res.ok) throw new Error(uploadJson.detail || 'Erreur upload')
+    setModelFiles(uploadJson.files)
+  } catch (err: any) {
+    setZipError(err.message)
+  } finally {
+    setLoading(false)
+  }
+}
+  /* Dataset train upload */
+  const [datasetColumns, setDatasetColumns] = useState<string[]>([])
+  const [trainDatasetId, setTrainDatasetId] = useState<number | null>(null)
+  const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
+const [selectedTarget, setSelectedTarget]     = useState<string | null>(null);
+const [selectedSensitive, setSelectedSensitive] = useState<string[]>([]);
+const [configYAML, setConfigYAML]     = useState<string>('')
+const [configError, setConfigError]   = useState<string>('')
+// ─── Step 5: entraînement ───
+const [runId, setRunId] = useState<number | null>(null);
+const [trainingLogs, setTrainingLogs] = useState<string[]>([]);
+const [trainingLoading, setTrainingLoading] = useState(false);
+const [trainingFinished, setTrainingFinished] = useState(false);
+const [testDatasetId, setTestDatasetId] = useState<number | null>(null)
+const [testDatasetColumns, setTestDatasetColumns] = useState<string[]>([])
+const [evalRunId, setEvalRunId] = useState<number | null>(null)
+const [evalLogs, setEvalLogs] = useState<string[]>([])
+const [evalLoading, setEvalLoading] = useState(false)
+const [evalFinished, setEvalFinished] = useState(false)
+const startEval=async()=>{
+    setEvalLoading(true);
+    try{
+      const res=await authFetch(`/projects/${id}/evaluate`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${t}`},body:JSON.stringify({model_run_id:runId,test_data_id:testDatasetId,data_config_id:trainDatasetId})});
+      const json=await res.json(); setEvalRunId(json.eval_id);
+      // SSE for eval logs
+      const src=new EventSourcePolyfill(`/projects/${id}/evaluate/${json.eval_id}/stream`,{headers:{Authorization:`Bearer ${t}`}});
+      src.onmessage=e=>{ setEvalLogs(l=>[...l,e.data]); if(e.data.startsWith('Evaluation finished')){ setEvalFinished(true); src.close(); }};
+      src.onerror=()=>src.close();
+    }catch(e:any){alert(e.message);}finally{setEvalLoading(false);}  };
+
+
+// Nouveau handler pour l’étape 2
+const onDropDataset = async (
+  acceptedFiles: File[],
+  fileRejections: FileRejection[]
+) => {
+  if (fileRejections.length > 0) {
+    setZipError('Seuls les fichiers .csv sont acceptés.')
+    return
+  }
+  const file = acceptedFiles[0]
+  if (!file) return
+  if (!file.name.toLowerCase().endsWith('.csv')) {
+    setZipError('Seuls les fichiers .csv sont acceptés.')
+    return
+  }
+
+  setZipError(undefined)
+  setLoading(true)
+  const form = new FormData()
+  form.append('file', file, file.name) // 👉 le champ 'file' côté back
+
+  try {
+    const res = await authFetch(
+      `http://127.0.0.1:8000/projects/${id}/model/upload_dataset?kind=train`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      }
+    )
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }))
+      throw new Error(err.detail || 'Erreur upload dataset')
+    }
+    const json = await res.json() as { dataset_id: number; columns: string[] }
+    setTrainDatasetId(json.dataset_id)
+    setDatasetColumns(json.columns)
+  } catch (e: any) {
+    setZipError(e.message)
+  } finally {
+    setLoading(false)
+  }
+}
+
+
+const onDropTestDataset = async (
+  acceptedFiles: File[],
+  fileRejections: FileRejection[]
+) => {
+  if (fileRejections.length > 0) {
+    setZipError('Seuls les fichiers .csv sont acceptés.')
+    return
+  }
+  const file = acceptedFiles[0]
+  if (!file) return
+  if (!file.name.toLowerCase().endsWith('.csv')) {
+    setZipError('Seuls les fichiers .csv sont acceptés.')
+    return
+  }
+
+  setZipError(undefined)
+  setLoading(true)
+  const form = new FormData()
+  form.append('file', file, file.name) // 👉 le champ 'file' côté back
+
+  try {
+    const res = await authFetch(
+      `http://127.0.0.1:8000/projects/${id}/model/upload_dataset?kind=test`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      }
+    )
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }))
+      throw new Error(err.detail || 'Erreur upload dataset')
+    }
+    const json = await res.json() as { dataset_id: number; columns: string[] }
+    setTestDatasetId(json.dataset_id)
+    setTestDatasetColumns(json.columns)
+  } catch (e: any) {
+    setZipError(e.message)
+  } finally {
+    setLoading(false)
+  }
+}
+
+const startTraining = async () => {
+  setTrainingLoading(true);
+  try {
+    const res = await authFetch(
+      `http://127.0.0.1:8000/projects/${id}/model/train`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataset_id: trainDatasetId }),
+      }
+    );
+    if (!res.ok) throw new Error('Impossible de démarrer');
+    const { run_id } = await res.json() as { run_id: number };
+    setRunId(run_id);
+  } catch (e: any) {
+    alert(e.message);
+  } finally {
+    setTrainingLoading(false);
+  }
+};
+
+// Dès qu'on a un runId, on ouvre le stream SSE
+useEffect(() => {
+  if (!runId) return;
+  const src = new EventSourcePolyfill(
+    `http://127.0.0.1:8000/projects/${id}/model/runs/${runId}/stream`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  src.onmessage = e => {
+    setTrainingLogs(logs => [...logs, e.data]);
+    if (e.data.startsWith('Training finished')) {
+      setTrainingFinished(true);
+      src.close();
+    }
+  };
+  src.onerror = () => { src.close(); };
+  return () => { src.close(); };
+}, [runId]);
+
 
   /* charger projet */
   useEffect(() => {
@@ -199,72 +585,31 @@ export default function ProjectDetail() {
     .finally(()=>setLoading(false))
   }, [id,t,logout])
 
-  /* checklist */
-  const fetchChecklist = async () => {
-    try {
-      const r = await fetch(`http://127.0.0.1:8000/projects/${id}/checklist`, {
-        headers: { Authorization: `Bearer ${t}` }
-      })
-      if (r.status===401){ logout(); return }
-      if (!r.ok) throw new Error(`Erreur ${r.status}`)
-      const raw = await r.json() as any[]
-      const mapped = raw.map(i=>({
-        id:String(i.id),
-        control_id:i.control_id,
-        control_name:i.control_name,
-        description:i.description,
-        audit_questions:i.audit_questions,
-        evidence_required:i.evidence_required,
-        statuses:i.statuses ?? Array(i.audit_questions.length).fill(i.status),
-        results:i.results ?? Array(i.audit_questions.length).fill(i.result),
-        observations:i.observations ?? Array(i.audit_questions.length).fill(i.observation),
-      }))
-      setChecklist(mapped)
-      recalcScores(mapped)
-    } catch(e:any){
-      setError(e.message)
+  
+  
+  // charger le config.yaml quand on arrive à l'étape 4
+  useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        setLoading(true)
+        const res = await authFetch(
+          `http://127.0.0.1:8000/projects/${id}/model/config`,
+          { method: 'GET', headers: { Authorization: `Bearer ${t}` } }
+        )
+        if (!res.ok) throw new Error(`Erreur ${res.status}`)
+        const text = await res.text()
+        setConfigYAML(text)
+        setConfigError('')
+      } catch (e: any) {
+        setConfigError(e.message)
+      } finally {
+        setLoading(false)
+      }
     }
-  }
-  useEffect(() => { if(tab===3) fetchChecklist() }, [tab,id,t])
+    if (activeStep === 3) loadConfig()
+  }, [activeStep, id, t])
 
-  const recalcScores = (list: ISO42001ChecklistItem[]) => {
-    const total = list.reduce((s,i)=>s + i.audit_questions.length,0)
-    const done  = list.reduce((s,i)=>s + i.statuses.filter(x=>x==='done').length,0)
-    const comp  = list.reduce((s,i)=>s + i.results.filter(x=>x==='compliant').length,0)
-    setProject(p=>p && ({
-      ...p,
-      progress: Math.round(done/total*100),
-      complianceScore: Math.round(comp/total*100)
-    }))
-  }
-
-  /* proofs */
-  async function loadProofs(itemId:string, qIdx:number){
-    try {
-      const r = await fetch(
-        `http://127.0.0.1:8000/projects/${id}/checklist/${itemId}/questions/${qIdx}/proofs`,
-        { headers:{ Authorization:`Bearer ${t}` } }
-      )
-      if(r.status===401){ logout(); return }
-      if(!r.ok){ setProofs([]); return }
-      setProofs(await r.json())
-    } catch{
-      setProofs([])
-    }
-  }
-
-  /* commentaires CRUD */
-  const refreshComments = async () => {
-    try {
-      const r = await fetch(`http://127.0.0.1:8000/projects/${id}/comments`, {
-        headers:{ Authorization:`Bearer ${t}` }
-      })
-      if(r.status===401){ logout(); return }
-      if(!r.ok) throw new Error()
-      const data:Comment[] = await r.json()
-      setProject(p=>p && ({...p, comments:data}))
-    } catch{}
-  }
+  
 
   /* dialog helpers */
   const openDlg = (item:ISO42001ChecklistItem, idx:number) => {
@@ -286,7 +631,7 @@ export default function ProjectDetail() {
   }
 
   const proofExist = (evId:string)=>proofs.find(p=>p.evidence_id===evId)
-  const missingProof = () => {
+  const missingProof = (): boolean => {
     if(!activeItem||activeQ===null) return false
     if(formResult!=='compliant') return false
     return activeItem
@@ -362,6 +707,7 @@ export default function ProjectDetail() {
     lvl==='high'?<ShieldAlert size={16}/>
     :lvl==='medium'?<AlertTriangle size={16}/>
     :<CheckCircle2 size={16}/>
+
 
   return (
     <Box>
@@ -504,7 +850,7 @@ export default function ProjectDetail() {
                           primary={c.author}
                           secondary={
                             <>
-                              <Typography variant="caption" color="text.secondary" display="block">{c.date}</Typography>
+                              <Typography variant="caption" color="text.secondary" display="block" component="span" >{c.date}</Typography>
                               {editId===c.id ? (
                                 <>
                                   <TextField fullWidth multiline value={editContent} onChange={e=>setEditContent(e.target.value)}/>
@@ -525,8 +871,8 @@ export default function ProjectDetail() {
                                 </>
                               ) : (
                                 <>
-                                  <Typography>{c.content}</Typography>
-                                  <Box mt={1}>
+                                  <Typography component="span">{c.content}</Typography>
+                                  <Box component="span" mt={1}>
                                     <Button size="small" onClick={()=>{ setEditId(c.id); setEditContent(c.content) }}>Modifier</Button>
                                     <Button size="small" color="error" onClick={async()=>{
                                       if(!window.confirm('Supprimer ?'))return
@@ -551,29 +897,243 @@ export default function ProjectDetail() {
               )}
 
               {/* 2 — Détails IA */}
-              {tab===2 && project.aiDetails && (
-                <Box>
-                  <Typography variant="h6" gutterBottom>Détails du modèle IA</Typography>
-                  <Grid container spacing={2}>
-                    <Grid item xs={6}><Typography><strong>Type :</strong> {project.aiDetails.type}</Typography></Grid>
-                    <Grid item xs={6}><Typography><strong>Modèle :</strong> {project.aiDetails.model}</Typography></Grid>
-                    <Grid item xs={6}><Typography><strong>Framework :</strong> {project.aiDetails.framework}</Typography></Grid>
-                    <Grid item xs={6}><Typography><strong>Dataset :</strong> {project.aiDetails.datasetSize}</Typography></Grid>
-                    <Grid item xs={6}><Typography><strong>Features :</strong> {project.aiDetails.featuresCount}</Typography></Grid>
-                    <Grid item xs={6}><Typography><strong>Accuracy :</strong> {project.aiDetails.accuracy}%</Typography></Grid>
-                    <Grid item xs={6}><Typography><strong>Training time :</strong> {project.aiDetails.trainingTime}</Typography></Grid>
-                  </Grid>
-                  <Box mt={4}>
-                    <PieChart
-                      title="Conformité"
-                      labels={['OK','Écart']}
-                      data={[project.complianceScore,100-project.complianceScore]}
-                      height={200}
-                    />
-                  </Box>
-                </Box>
-              )}
+{/* 2 — Détails IA */}
+{tab === 2 && (
+  <Box>
+    {/* Stepper en haut de l’onglet Détails IA */}
+    <Stepper activeStep={activeStep} alternativeLabel sx={{ mb: 3 }}>
+            {steps.map((label) => (
+              <Step key={label} completed={isStepReady(steps.indexOf(label))}>
+                <StepLabel>{label}</StepLabel>
+              </Step>
+            ))}
+          </Stepper>
 
+    {/* Panel for Étape 1: Importer modèle */}
+                  {/* Etape 1: Import modèle */}
+                  {activeStep === 0 && (
+                    <Card sx={{ mt: 3 }}>
+                      <CardContent>
+                        <Typography variant="h6" gutterBottom>
+                          Étape 1: Importer le modèle (ZIP)
+                        </Typography>
+                        <Box mb={2}>
+                          <Button
+                            variant="outlined"
+                            startIcon={<Download size={18}/>} 
+                            onClick={downloadWithAuth(
+                              `http://127.0.0.1:8000/templates/model`, t, 'template.zip'
+                            )}
+                          >
+                            Télécharger le template
+                          </Button>
+                        </Box>
+                        <DropArea
+                          onDrop={onDrop}
+                          accept={{ 'application/zip': ['.zip'] }}
+                          placeholder="Glissez ou cliquez pour ajouter un ZIP"
+                        />
+                        {zipError && <Typography color="error" sx={{ mt:2 }}>{zipError}</Typography>}
+
+                        {modelFiles.length > 0 && (
+                          <Box sx={{ mt:2 }}>
+                            <Typography variant="subtitle2">Aperçu des fichiers importés :</Typography>
+                            <List dense>
+                              {modelFiles.map(fileName => (
+                                <ListItem key={fileName}>
+                                  <ListItemAvatar>
+                                    <Avatar><ArrowLeft size={16}/></Avatar>
+                                  </ListItemAvatar>
+                                  <ListItemText primary={fileName}/>
+                                </ListItem>
+                              ))}
+                            </List>
+                          </Box>
+                        )}
+
+                        <Box sx={{ mt:3, display:'flex', justifyContent:'flex-end', gap:2 }}>
+                          <Button variant="contained" onClick={handleNext} disabled={!isStepReady(0)}>
+                            Suivant
+                          </Button>
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Etape 2: Dataset entraînement */}
+                  {activeStep === 1 && (
+                    <Card sx={{ mt:3 }}>
+                      <CardContent>
+                        <Typography variant="h6">Étape 2: Dataset entraînement (CSV)</Typography>
+                        <DropArea
+                          onDrop={onDropDataset}
+                          accept={{ 'text/csv': ['.csv'] }}
+                          placeholder="Glissez ou cliquez pour ajouter un CSV d’entraînement"
+                        />
+                        {zipError && <Typography color="error" sx={{ mt:2 }}>{zipError}</Typography>}
+
+                        {datasetColumns.length > 0 && (
+                          <Box sx={{ mt:3, display:'flex', justifyContent:'space-between' }}>
+                            <Button variant="outlined" onClick={handleBack}>Précédent</Button>
+                            <Button variant="contained" onClick={handleNext} disabled={!isStepReady(1)}>Suivant</Button>
+                          </Box>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Etape 3: Features / Target */}
+                  {activeStep === 2 && (
+                    <Card sx={{ mt:3 }}>
+                      <CardContent>
+                        <Typography variant="h6">Étape 3: Features / Target / Sensitives</Typography>
+                        {/* Autocomplete, Select UI here */}
+                        <Box sx={{ mt:3, display:'flex', justifyContent:'space-between' }}>
+                          <Button variant="outlined" onClick={handleBack}>Précédent</Button>
+                          <Button variant="contained" onClick={handleNext} disabled={!isStepReady(2)}>Suivant</Button>
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Etape 4: Config YAML */}
+                  {activeStep === 3 && (
+                    <Card sx={{ mt:3 }}>
+                      <CardContent>
+                        <Typography variant="h6">Étape 4: Modifier config.yaml</Typography>
+                        {/* TextField YAML */}
+                        <Box sx={{ mt:3, display:'flex', justifyContent:'space-between' }}>
+                          <Button variant="outlined" onClick={handleBack}>Précédent</Button>
+                          <Button variant="contained" onClick={handleNext}>Suivant</Button>
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Etape 5: Entraînement */}
+                  {activeStep === 4 && (
+                    <Card sx={{ mt:3 }}>
+                      <CardContent>
+                        <Typography variant="h6">Étape 5: Lancement de l’entraînement</Typography>
+                        {!runId ? (
+                          <Button variant="contained" onClick={startTraining} disabled={trainingLoading || !trainDatasetId} startIcon={trainingLoading ? <CircularProgress size={20}/> : null}>
+                            {trainingLoading ? 'Démarrage…' : 'Démarrer'}
+                          </Button>
+                        ) : (
+                          <Box mt={2}>
+                            <Typography variant="subtitle2">Logs run #{runId}:</Typography>
+                            <List sx={{ maxHeight:300, overflow:'auto', bgcolor:'background.paper', border:'1px solid divider' }}>
+                              {trainingLogs.map((l,i)=>(<ListItem key={i} dense><Typography component="pre" variant="body2" sx={{ m:0 }}>{l}</Typography></ListItem>))}
+                            </List>
+                            {!trainingFinished ? <Typography variant="caption">En cours…</Typography> : <Typography color="success.main">Entraînement terminé ✔</Typography>}
+                          </Box>
+                        )}
+                        <Box sx={{ mt:3, display:'flex', justifyContent:'space-between' }}>
+                          <Button variant="outlined" onClick={handleBack}>Précédent</Button>
+                          <Button variant="contained" onClick={handleNext} disabled={!isStepReady(4)}>Suivant</Button>
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Etape 6: Dataset test */}
+                  {activeStep === 5 && (
+                    <Card sx={{ mt:3 }}>
+                      <CardContent>
+                        <Typography variant="h6">Étape 6: Dataset test (CSV)</Typography>
+                        <DropArea onDrop={onDropTestDataset} accept={{ 'text/csv':['.csv'] }} placeholder="Glissez ou cliquez pour ajouter un CSV test"/>
+                        {testDatasetColumns.length>0 && (
+                          <Box sx={{ mt:2, display:'flex', justifyContent:'space-between' }}>
+                            <Button variant="outlined" onClick={handleBack}>Précédent</Button>
+                            <Button variant="contained" onClick={handleNext} disabled={!isStepReady(5)}>Suivant</Button>
+                          </Box>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Etape 7: Évaluation */}
+                  {activeStep === 6 && (
+                    <Card sx={{ mt:3 }}>
+                      <CardContent>
+                        <Typography variant="h6">Étape 7: Lancer l’évaluation</Typography>
+                        {!evalRunId ? (
+                          <Button variant="contained" onClick={startEval} disabled={!runId||!testDatasetId||evalLoading}>
+                            {evalLoading?'Démarrage…':'Lancer'}
+                          </Button>
+                        ) : (
+                          <Box mt={2}>
+                            <Typography>Logs évaluation #{evalRunId}:</Typography>
+                            <List sx={{ maxHeight:300, overflow:'auto', bgcolor:'#fafafa', border:'1px solid #ddd' }}>
+                              {evalLogs.map((l,i)=>(<ListItem key={i}><Typography component="pre" variant="body2">{l}</Typography></ListItem>))}
+                            </List>
+                            {evalFinished ? <Typography color="success.main">Évaluation terminée ✔</Typography> : <Typography variant="caption">En cours…</Typography>}
+                          </Box>
+                        )}
+                        <Box sx={{ mt:3, display:'flex', justifyContent:'flex-start' }}>
+                          <Button variant="outlined" onClick={handleBack}>Précédent</Button>
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  )}
+
+
+    {/* --- affichage des détails IA uniquement si un modèle a déjà été importé --- */}
+    {project.aiDetails && (
+      <>
+        <Typography variant="h6" gutterBottom sx={{ mt: 4 }}>
+          Détails du modèle IA
+        </Typography>
+        <Grid container spacing={2}>
+          <Grid item xs={6}>
+            <Typography>
+              <strong>Type :</strong> {project.aiDetails.type}
+            </Typography>
+          </Grid>
+          <Grid item xs={6}>
+            <Typography>
+              <strong>Modèle :</strong> {project.aiDetails.model}
+            </Typography>
+          </Grid>
+          <Grid item xs={6}>
+            <Typography>
+              <strong>Framework :</strong> {project.aiDetails.framework}
+            </Typography>
+          </Grid>
+          <Grid item xs={6}>
+            <Typography>
+              <strong>Dataset :</strong> {project.aiDetails.datasetSize}
+            </Typography>
+          </Grid>
+          <Grid item xs={6}>
+            <Typography>
+              <strong>Features :</strong> {project.aiDetails.featuresCount}
+            </Typography>
+          </Grid>
+          <Grid item xs={6}>
+            <Typography>
+              <strong>Accuracy :</strong> {project.aiDetails.accuracy}%
+            </Typography>
+          </Grid>
+          <Grid item xs={6}>
+            <Typography>
+              <strong>Training time :</strong> {project.aiDetails.trainingTime}
+            </Typography>
+          </Grid>
+        </Grid>
+        <Box mt={4}>
+          <PieChart
+            title="Conformité"
+            labels={['OK', 'Écart']}
+            data={[project.complianceScore, 100 - project.complianceScore]}
+            height={200}
+          />
+        </Box>
+      </>
+    )}
+  </Box>
+)}
+    
               {/* 3 — Audit */}
               {tab===3 && (
                 <Box>
@@ -670,7 +1230,7 @@ export default function ProjectDetail() {
           <TextField
             fullWidth
             margin="dense"
-            label="Observation"
+            label="recommendation"
             multiline
             minRows={3}
             value={formObs}

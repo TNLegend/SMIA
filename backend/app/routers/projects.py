@@ -1,3 +1,4 @@
+# app/routers/projects.py
 from datetime import datetime
 from pathlib import Path as FSPath
 from typing import List, Optional, Dict, Any
@@ -27,16 +28,14 @@ from app.models import (
     CommentCreate,
     ISO42001ChecklistItem,
     ActionCorrective,
-    Proof,
+    Proof, DataSet, ModelRun,
 )
 from config.iso42001_requirements import ISO42001_REQUIREMENTS
-
+from app.utils.dependencies import get_session
+from app.utils.files import purge_project_storage
+from sqlalchemy.orm import selectinload   # pour charger les enfants en une requête
 router = APIRouter(prefix="/projects", tags=["projects"])
 
-
-def get_session():
-    with SessionLocal() as sess:
-        yield sess
 
 
 # ─────────────────────────── PROJECT CRUD ────────────────────────────────────
@@ -115,35 +114,38 @@ def delete_project(
     current_user: User = Depends(get_current_user),
     sess: Session = Depends(get_session),
 ):
-    # 1) Récupère tous les checklist_item_ids du projet
-    item_ids = sess.exec(
-        select(ISO42001ChecklistItem.id)
-        .where(ISO42001ChecklistItem.project_id == project_id)
-    ).all()
-
-    if item_ids:
-        # 2) Supprime d'abord les actions correctives
+    proj = (
         sess.exec(
-            delete(ActionCorrective)
-            .where(ActionCorrective.checklist_item_id.in_(item_ids))
+            select(AIProject)
+            .where(AIProject.id == project_id)
+            # pré-charge tous les enfants pour déclencher le cascade in-memory
+            .options(
+                selectinload(AIProject.checklist_items)
+                .selectinload(ISO42001ChecklistItem.proofs),
+                selectinload(AIProject.checklist_items)
+                .selectinload(ISO42001ChecklistItem.actions_correctives),
+                selectinload(AIProject.model_runs)
+                .selectinload(ModelRun.artifacts),
+                selectinload(AIProject.evaluation_runs),
+                selectinload(AIProject.datasets)
+                .selectinload(DataSet.config),
         )
-        # 3) Supprime **toutes** les preuves liées
-        sess.exec(
-            delete(Proof)
-            .where(Proof.checklist_item_id.in_(item_ids))
         )
-        # 4) Supprime ensuite les checklist items
-        sess.exec(
-            delete(ISO42001ChecklistItem)
-            .where(ISO42001ChecklistItem.project_id == project_id)
-        )
-
-    # 5) Enfin, supprime le projet lui-même
-    proj = sess.get(AIProject, project_id)
+        .first()
+    )
     if not proj:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise HTTPException(404, "Project not found")
+    if proj.owner != current_user.username:
+        raise HTTPException(403, "Forbidden")
+
+    # 1. suppression en base (cascade géré par ORM)
     sess.delete(proj)
     sess.commit()
+
+    # 2. suppression sur disque
+    purge_project_storage(project_id)
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ───────────────────────────── COMMENTS ──────────────────────────────────────
@@ -648,3 +650,4 @@ def download_blank_proof(
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename=filename,
     )
+
