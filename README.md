@@ -17,6 +17,7 @@ The project is split into two parts:
 
 ### Backend
 - Python 3.10 you might face some problems installing requirements with python version 3.13 so you better remove versions from requirements and let pip handle conflicts
+- Microsoft Visual C++ 14.0 or greater for building Python packages like mmh3)
 - pip (Python package installer)
 - SQLite (default) or another supported database
 
