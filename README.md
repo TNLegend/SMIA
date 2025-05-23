@@ -116,7 +116,7 @@ pip install -r requirements.txt
 ```bash
 uvicorn app.main:app --reload
 ```
-6. Build the docker image from the project's root
+6. Build the docker image from the backend's root
 
 ```bash
 docker build -t smia-runtime:latest -f Dockerfile.smia-runtime .
