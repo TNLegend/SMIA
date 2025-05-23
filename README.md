@@ -116,7 +116,11 @@ pip install -r requirements.txt
 ```bash
 uvicorn app.main:app --reload
 ```
+6. Build the docker image from the project's root
 
+```bash
+docker build -t smia-runtime:latest -f Dockerfile.smia-runtime .
+```
 The Backend API will be accessible at: http://127.0.0.1:8000
 
 ### Frontend Setup
