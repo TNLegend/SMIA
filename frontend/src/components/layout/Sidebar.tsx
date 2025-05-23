@@ -6,9 +6,10 @@ import {
 } from '@mui/material';
 import {
   LayoutDashboard, FileSearch, ShieldAlert, FileBarChart2,
-  FileCog, FileText, LogOut as LogOutIcon, BrainCircuit
-} from 'lucide-react';
+  FileCog, FileText, LogOut as LogOutIcon, BrainCircuit,
+Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+
 
 interface SidebarProps {
   open: boolean;
@@ -27,10 +28,8 @@ const Sidebar: React.FC<SidebarProps> = ({ open, onClose, variant }) => {
   const menuItems = [
     { text: 'Tableau de bord', icon: <LayoutDashboard size={20} />, path: '/dashboard' },
     { text: 'Projets IA',      icon: <FileSearch      size={20} />, path: '/projects' },
-    { text: 'Politique IA',    icon: <FileCog         size={20} />, path: '/policy' },
-    { text: 'Risques IA',      icon: <ShieldAlert     size={20} />, path: '/risk-analysis' },
-    { text: 'Rapports',        icon: <FileBarChart2   size={20} />, path: '/reports' },
-    { text: 'Documents', icon: <FileText size={20}/>, path: '/documents' },
+    { text: 'Équipes',         icon: <Users           size={20} />, path: '/teams' },
+    { text: 'Preuves', icon: <FileText size={20}/>, path: '/documents' },
 
   ];
 

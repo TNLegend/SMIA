@@ -28,6 +28,7 @@ import {
   FileText
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import { useApi } from '../../api/client'
 
 export interface ProjectCardProps {
   id: string
@@ -73,11 +74,12 @@ export default function ProjectCard({
     handleClose()
     navigate(`/projects/${id}/edit`)
   }
+  const api = useApi();
 
   const handleDelete = async () => {
     handleClose()
     if (!confirm('Voulez-vous vraiment supprimer ce projet ?')) return
-    const res = await fetch(`http://127.0.0.1:8000/projects/${id}`, {
+    const res = await api(`/projects/${id}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` }
     })

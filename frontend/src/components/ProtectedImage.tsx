@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
+import { useApi } from "../api/client";
 
 export function ProtectedImage({
   src, alt, style
@@ -10,14 +11,11 @@ export function ProtectedImage({
 }) {
   const { token } = useAuth();
   const [blobUrl, setBlobUrl] = useState<string>();
-
+  const api = useApi()
   useEffect(() => {
     let mounted = true;
     let objectUrl: string;
-    fetch(src, {
-      headers: { Authorization: `Bearer ${token}` },
-      credentials: "include"
-    })
+    api(src)
     .then(res => {
       if (!res.ok) throw new Error("Image fetch failed");
       return res.blob();
@@ -32,7 +30,7 @@ export function ProtectedImage({
       mounted = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [src, token]);
+  }, [src]);
 
   if (!blobUrl) return <span style={style}>Loading…</span>;
   return <img src={blobUrl} alt={alt} style={style} />;

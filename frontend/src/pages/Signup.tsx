@@ -14,9 +14,10 @@ import {
   useMediaQuery,
 } from "@mui/material";
 import { motion } from "framer-motion";
-import { useAuthFetch } from "../utils/authFetch";
+import { useApi } from "../api/client";
 import { useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { Api } from "@mui/icons-material";
 
 
 interface SignupProps {
@@ -58,7 +59,7 @@ useEffect(() => {
 
   const pwdScore = useMemo(() => scorePassword(password), [password]);
   const isFormValid = USERNAME_REGEX.test(username) && pwdScore >= 4;
-  const authFetch = useAuthFetch();
+  const api = useApi();
 
 
   const handleSubmit = async (e: FormEvent) => {
@@ -71,7 +72,7 @@ useEffect(() => {
     setLoading(true);
     try {
       const body = new URLSearchParams({ username, password });
-      const res = await authFetch("http://127.0.0.1:8000/auth/signup", {
+      const res = await api("/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body,

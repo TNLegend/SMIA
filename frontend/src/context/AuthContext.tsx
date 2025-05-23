@@ -31,7 +31,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setToken(null)
     navigate('/login', { replace: true })
   }
-
+  
   useEffect(() => {
     if (!token) {
       // no token → already logged out
@@ -50,10 +50,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return logout()
     }
 
-    // 2) verify signature / still valid with server
-    fetch('http://127.0.0.1:8000/auth/me', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    // 2) vérifie côté serveur
+    fetch(
+      `${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/auth/me`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    )
       .then(res => {
         if (res.status === 401) {
           // signature invalid or revoked

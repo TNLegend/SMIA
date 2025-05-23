@@ -8,19 +8,89 @@ from sqlalchemy import Column, LargeBinary, UniqueConstraint, ForeignKey
 from sqlalchemy.dialects.sqlite import JSON as SQLiteJSON
 from sqlalchemy.ext.mutable import MutableList
 from sqlmodel import Field, SQLModel, Relationship
-
-
+from enum import Enum
+from datetime import date
 # ─────── USERS ───────
 
 class Role(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    name: str
+    name: str = Field(index=True, unique=True, nullable=False)
+
+    # relation inverse (optionnelle)
+    users: List["User"] = Relationship(back_populates="role")
+
 
 class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    username: str = Field(index=True, unique=True)
+    username: str = Field(index=True, unique=True, nullable=False)
     password_hash: str
-    role_id: int = Field(foreign_key="role.id")
+
+    role_id: Optional[int] = Field(foreign_key="role.id", default=None)
+    role: Optional[Role] = Relationship(back_populates="users")
+
+    # équipes qu’il possède
+    owned_teams: List["Team"] = Relationship(back_populates="owner")
+    # adhésions aux équipes
+    teams: List["TeamMembership"] = Relationship(back_populates="user")
+
+class TeamMemberResponse(BaseModel):
+    name: str
+    role: str
+    avatar: Optional[str] = None  # avatar optionnel, peut être une URL
+
+    class Config:
+        orm_mode = True
+
+class Team(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(index=True, unique=True, nullable=False)
+    owner_id: int = Field(foreign_key="user.id", nullable=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    # qui possède l’équipe
+    owner: User = Relationship(back_populates="owned_teams")
+    # tous ses membres
+    members: List["TeamMembership"] = Relationship(
+            back_populates = "team",
+            sa_relationship_kwargs = {
+                    "cascade": "all, delete-orphan",
+                    "single_parent": True,
+        },
+    )
+    projects: List["AIProject"] = Relationship(
+            back_populates = "team",
+            sa_relationship_kwargs = {
+                    "cascade": "all, delete-orphan",
+                    "single_parent": True,
+        },
+        )
+    documents: List["Document"] = Relationship(
+            back_populates = "team",
+            sa_relationship_kwargs = {
+                    "cascade": "all, delete-orphan",
+                    "single_parent": True,
+        },
+    )
+
+
+class TeamMembership(SQLModel, table=True):
+    __table_args__ = (
+        UniqueConstraint("user_id", "team_id", name="uq_user_team"),
+    )
+
+    user_id: int = Field(foreign_key="user.id", primary_key=True)
+    team_id: int = Field(foreign_key="team.id", primary_key=True)
+    role: str = Field(
+        default="member",
+        description="owner | manager | member",
+        nullable=False
+    )
+    invited_at: datetime = Field(default_factory=datetime.utcnow)
+    accepted_at: Optional[datetime] = None
+    revoked_at: Optional[datetime] = None
+
+    user: User = Relationship(back_populates="teams")
+    team: Team = Relationship(back_populates="members")
 
 # ─────── DOCUMENTS ───────
 
@@ -34,6 +104,8 @@ class Document(DocumentBase, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     created_by: str
+    team_id: int = Field(foreign_key="team.id", nullable=False, index=True)
+    team: "Team" = Relationship(back_populates="documents")
 
 class DocumentImage(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -93,14 +165,14 @@ class Risk(SQLModel):
     date: str
     mitigation: Optional[str] = None
 
-class Comment(SQLModel):
+class Comment(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
+    project_id: int = Field(foreign_key="aiproject.id", nullable=False, index=True)
     author: str
-    date: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
     content: str
+    date: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        from_attributes = True
+    project: "AIProject" = Relationship(back_populates="comments")
 
 class CommentCreate(SQLModel):
     content: str
@@ -109,10 +181,17 @@ class AIDetails(SQLModel):
     type: str
     model: str
     framework: str
-    dataset_size: str
+    dataset_size: int
     features_count: int
-    accuracy: int
-    training_time: str
+    accuracy: float
+    r2: float
+    training_time: float
+
+    class Config:
+        alias_generator = to_camel
+        allow_population_by_field_name = True
+        populate_by_name = True
+
 
 class AIProjectBase(SQLModel):
     title: str
@@ -128,9 +207,12 @@ class AIProjectBase(SQLModel):
 
     tags: List[str] = Field(default_factory=list, sa_column=Column(SQLiteJSON))
     phases: List[Phase] = Field(default_factory=list, sa_column=Column(SQLiteJSON))
-    team: List[TeamMember] = Field(default_factory=list, sa_column=Column(SQLiteJSON))
+    team_members: List[TeamMember] = Field(
+    default_factory = list,
+    sa_column = Column(SQLiteJSON),
+    description = "(JSON) metadata about your team members"
+    )
     risks: List[Risk] = Field(default_factory=list, sa_column=Column(SQLiteJSON))
-    comments: List[Comment] = Field(default_factory=list, sa_column=Column(SQLiteJSON))
     ai_details: Optional[AIDetails] = Field(default=None, sa_column=Column(SQLiteJSON))
 
     class Config:
@@ -142,6 +224,8 @@ class AIProject(AIProjectBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+    team_id: int = Field(foreign_key="team.id", nullable=False, index=True)
+    team: "Team" = Relationship(back_populates="projects")
     checklist_items: List["ISO42001ChecklistItem"] = Relationship(
         back_populates="project",
         sa_relationship_kwargs={
@@ -165,16 +249,25 @@ class AIProject(AIProjectBase, table=True):
         back_populates="project",
         sa_relationship_kwargs={"cascade": "all, delete-orphan", "single_parent": True},
     )
+    comments: List[Comment] = Relationship(
+        back_populates="project",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    notifications: List["Notification"] = Relationship(back_populates="project",
+                                                       sa_relationship_kwargs={"cascade": "all, delete-orphan"})
 
 
 
 class AIProjectCreate(AIProjectBase):
-    pass
+    class Config:
+        orm_mode = True
 
 class AIProjectRead(AIProjectBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    team_id: int
+    team_members: List[TeamMemberResponse] = []
 
 class ISO42001ChecklistItemBase(SQLModel):
     project_id: int
@@ -187,6 +280,61 @@ class ISO42001ChecklistItemBase(SQLModel):
     evidence_required: List[Dict[str, Any]] = Field(
         default_factory=list, sa_column=Column(SQLiteJSON)
     )
+class TypeNonConformite(str, Enum):
+    mineure = "mineure"
+    majeure = "majeure"
+
+class StatutNonConformite(str, Enum):
+    non_corrigee = "non_corrigee"
+    en_cours     = "en_cours"
+    corrigee     = "corrigee"
+    ferme        = "ferme"
+
+class NonConformiteBase(BaseModel):
+    type_nc: TypeNonConformite
+    deadline_correction: Optional[datetime] = None
+    statut: StatutNonConformite = StatutNonConformite.non_corrigee
+
+class NonConformiteCreate(NonConformiteBase):
+    pass
+
+class NonConformiteUpdate(BaseModel):
+    type_nc: Optional[TypeNonConformite] = None
+    deadline_correction: Optional[datetime] = None
+    statut: Optional[StatutNonConformite] = None
+
+class NonConformiteRead(BaseModel):
+    id: int
+    checklist_item_id: int
+    question_index: int
+    type_nc: str  # mineure / majeure
+    deadline_correction: Optional[datetime]
+    statut: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
+
+class NonConformite(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    checklist_item_id: int = Field(foreign_key="iso42001checklistitem.id", nullable=False, index=True)
+    question_index: int = Field(nullable=False, index=True)  # <-- Nouveau champ
+
+    type_nc: TypeNonConformite = Field(nullable=False)
+    deadline_correction: Optional[datetime] = None
+    statut: StatutNonConformite = Field(default=StatutNonConformite.non_corrigee)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    checklist_item: "ISO42001ChecklistItem" = Relationship(back_populates="non_conformites")
+
+    actions_correctives: List["ActionCorrective"] = Relationship(
+        back_populates="non_conformite",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "single_parent": True},
+    )
+
 
 class ISO42001ChecklistItem(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -221,6 +369,10 @@ class ISO42001ChecklistItem(SQLModel, table=True):
 
     project: AIProject = Relationship(back_populates="checklist_items")
     proofs: List["Proof"] = Relationship(back_populates="checklist_item")
+    non_conformites: List[NonConformite] = Relationship(
+        back_populates="checklist_item",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "single_parent": True},
+    )
 
 
 class Proof(SQLModel, table=True):
@@ -261,12 +413,32 @@ class ActionCorrective(SQLModel, table=True):
     description: str
     deadline: datetime
     status: str
-    checklist_item_id: int = Field(foreign_key="iso42001checklistitem.id")
+
+    checklist_item_id: int = Field(foreign_key="iso42001checklistitem.id", nullable=True)
+    non_conformite_id: int = Field(foreign_key="nonconformite.id", nullable=True)
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    checklist_item: "ISO42001ChecklistItem" = Relationship(
-    back_populates = "actions_correctives"
-    )
+
+    checklist_item: Optional["ISO42001ChecklistItem"] = Relationship(back_populates="actions_correctives")
+    non_conformite: Optional[NonConformite] = Relationship(back_populates="actions_correctives")
+    responsible_user_id: Optional[int] = Field(default=None, foreign_key="user.id", nullable=True)
+    responsible_user: Optional[User] = Relationship()
+
+
+class Notification(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    team_id: int = Field(foreign_key="team.id", nullable=False, index=True)
+    project_id: int = Field(foreign_key="aiproject.id", nullable=False, index=True)
+    nonconformite_id: Optional[int] = Field(foreign_key="nonconformite.id", nullable=True, index=True)
+    message: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    read: bool = Field(default=False)
+
+    # Relations optionnelles
+    project: Optional["AIProject"] = Relationship(back_populates="notifications")
+    non_conformite: Optional["NonConformite"] = Relationship()
 
 #----------MODEL RUNS-------------
 
@@ -299,13 +471,24 @@ class DataSet(SQLModel, table=True):
             "single_parent": True
         }
     )
-    config: Optional["DataConfig"] = Relationship(
-        back_populates="dataset",
+    train_config: Optional["DataConfig"] = Relationship(
+        back_populates="train_dataset",
         sa_relationship_kwargs={
+            "foreign_keys": "[DataConfig.train_dataset_id]",
             "cascade": "all, delete-orphan",
             "single_parent": True,
             "uselist": False,
-        }
+        },
+    )
+
+    test_config: Optional["DataConfig"] = Relationship(
+        back_populates="test_dataset",
+        sa_relationship_kwargs={
+            "foreign_keys": "[DataConfig.test_dataset_id]",
+            "cascade": "all, delete-orphan",
+            "single_parent": True,
+            "uselist": False,
+        },
     )
 
 
@@ -313,24 +496,37 @@ class DataSet(SQLModel, table=True):
 class DataConfig(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     # ondelete="CASCADE" pour que, au niveau SQL, la suppression du DataSet supprime aussi le DataConfig
-    dataset_id: int = Field(
-        sa_column=Column(
-            ForeignKey("dataset.id", ondelete="CASCADE"),
-            nullable=False,
-        )
+    train_dataset_id: int = Field(
+        sa_column=Column(ForeignKey("dataset.id", ondelete="CASCADE")),
+        description="The ID of the training DataSet",
+    )
+    test_dataset_id: int = Field(
+        sa_column=Column(ForeignKey("dataset.id", ondelete="CASCADE")),
+        description="The ID of the testing DataSet",
     )
     features: List[str] = Field(sa_column=Column(SQLiteJSON))
-    target: str
+    target: Optional[str] = Field(default=None, nullable=True)
     sensitive_attrs: List[str] = Field(sa_column=Column(SQLiteJSON))
 
-    dataset: DataSet = Relationship(
-        back_populates="config"
+    train_dataset: DataSet = Relationship(
+        back_populates="train_config",
+        sa_relationship_kwargs={
+            "foreign_keys": "[DataConfig.train_dataset_id]",
+        },
+    )
+
+    test_dataset: DataSet = Relationship(
+        back_populates="test_config",
+        sa_relationship_kwargs={
+            "foreign_keys": "[DataConfig.test_dataset_id]",
+        },
     )
 
 class DataConfigCreate(BaseModel):
-    dataset_id: int
+    train_dataset_id: int
+    test_dataset_id: int
     features: List[str] = Field(min_items=1)
-    target: str
+    target:           Optional[str] = None
     sensitive_attrs: List[str] = Field(default_factory=list)
 
 

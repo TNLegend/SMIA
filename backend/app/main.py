@@ -7,13 +7,16 @@ from app.db import init_db
 from app.auth import router as auth_router
 from app.routers.documents import router as docs_router
 from app.routers.projects import router as projects_router
-from app.routers import templates, artifacts
+from app.routers import templates, artifacts, evaluations
 from app.routers.models import router as models_router
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
-from app.tasks.cleanup import start_scheduler
-
-
+from app.tasks.cleanup import start_scheduler as cleanup
+from app.routers.teams import router as teams_router
+from app.routers.notifications import router as notification_router
+from app.tasks.scheduler import start_scheduler as notif_scheduler
+from app.routers.report import router as report_router
+from app.routers import dashboard
 # ——— Configuration du logging global ———
 logging.basicConfig(
     level=logging.DEBUG,
@@ -40,7 +43,8 @@ async def limit_content_length(request: Request, call_next):
 @app.on_event("startup")
 def on_startup():
     init_db()
-    start_scheduler()
+    cleanup()
+    notif_scheduler()
     logger.debug("Database initialized")
 
 app.add_middleware(
@@ -57,4 +61,8 @@ app.include_router(projects_router)
 app.include_router(models_router)
 app.include_router(templates.router)
 app.include_router(artifacts.router)
-
+app.include_router(evaluations.router)
+app.include_router(teams_router)
+app.include_router(notification_router)
+app.include_router(report_router)
+app.include_router(dashboard.router)

@@ -1,8 +1,11 @@
-import React, { useState, MouseEvent } from 'react';
+import React, { useState, MouseEvent, useEffect, useCallback } from 'react';
 import {
   AppBar, Box, Toolbar, IconButton, Typography, Menu, MenuItem,
-  Badge, Tooltip, Avatar, Switch, FormControlLabel
+  Badge, Tooltip, Avatar, Switch, FormControlLabel, Button
 } from '@mui/material';
+import { Bell } from 'lucide-react';
+import { useApi } from '../../api/client';
+import { useTeam } from '../../context/TeamContext';
 import { useTheme } from '@mui/material/styles';
 import {
   Menu as MenuIcon,
@@ -14,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import TeamSelector from '../TeamSelector';
 
 interface HeaderProps {
   sidebarOpen: boolean;
@@ -21,6 +25,7 @@ interface HeaderProps {
   darkMode: boolean;
   toggleDarkMode: () => void;
 }
+
 
 const Header: React.FC<HeaderProps> = ({
   sidebarOpen,
@@ -30,10 +35,50 @@ const Header: React.FC<HeaderProps> = ({
 }) => {
   const theme = useTheme();
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const api = useApi();
+  const { token, logout } = useAuth();
+  const { teamId, setTeamId } = useTeam();
+
+  // 🆕 état pour les alertes non-lues
+  const [alerts, setAlerts] = useState<{ id:number; message:string; project_id:number }[]>([]);
+  const [alertsAnchor, setAlertsAnchor] = useState<null|HTMLElement>(null);
 
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [notificationAnchorEl, setNotificationAnchorEl] = useState<null | HTMLElement>(null);
+// invitation.id inexistant → on ne conserve que team
+const [invitations, setInvitations] = useState<{ team: { id:number; name:string } }[]>([])
+ 
+  useEffect(() => {
+  // Fetch invitations globally, no teamId needed
+  api('/teams/invitations', {
+    headers: { Authorization: `Bearer ${token}` }
+  })
+    .then(r => r.ok ? r.json() : [])
+    .then(setInvitations)
+    .catch(console.error)
+}, [api, token]);
+
+
+// 🆕 Charger les alertes non-lues pour l’équipe
+  useEffect(() => {
+    if (!teamId) return;
+    api(`/teams/${teamId}/notifications`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(r => r.ok ? r.json() : [])
+      .then(setAlerts)
+      .catch(console.error);
+  }, [api, token, teamId]);
+
+  // 🆕 Ouvre/ferme le menu d’alertes
+  const openAlertsMenu = (e: MouseEvent<HTMLElement>) => setAlertsAnchor(e.currentTarget);
+  const closeAlertsMenu = () => setAlertsAnchor(null);
+
+  // 🆕 Marque une alerte comme lue
+  const markAlertRead = async (id:number) => {
+    await api(`/teams/${teamId}/notifications/${id}/read`, { method: 'PUT' });
+    setAlerts(a => a.filter(x => x.id !== id));
+  };
 
   const handleProfileMenuOpen = (e: MouseEvent<HTMLElement>) => setAnchorEl(e.currentTarget);
   const handleMenuClose = () => setAnchorEl(null);
@@ -46,6 +91,14 @@ const Header: React.FC<HeaderProps> = ({
 
   const handleNotificationMenuOpen = (e: MouseEvent<HTMLElement>) => setNotificationAnchorEl(e.currentTarget);
   const handleNotificationMenuClose = () => setNotificationAnchorEl(null);
+const fetchInvitations = useCallback(() => {
+  api('/teams/invitations', {
+    headers: { Authorization: `Bearer ${token}` }
+  })
+    .then(r => r.ok ? r.json() : [])
+    .then(setInvitations)
+    .catch(console.error)
+}, [api, token]);
 
   return (
     <AppBar
@@ -91,13 +144,22 @@ const Header: React.FC<HeaderProps> = ({
               <HelpCircle size={20} />
             </IconButton>
           </Tooltip>
-          <Tooltip title="Notifications">
-            <IconButton color="inherit" onClick={handleNotificationMenuOpen} sx={{ mr: 1 }}>
-              <Badge badgeContent={3} color="error">
-                <Notifications size={20} />
-              </Badge>
-            </IconButton>
-          </Tooltip>
+           {/* 🆕 Bouton Alertes */}
+        <Tooltip title="Alertes non-conformités">
+          <IconButton color="inherit" onClick={openAlertsMenu} sx={{ mr: 1 }}>
+            <Badge badgeContent={alerts.length} color="warning">
+             <Bell size={20} />
+            </Badge>
+          </IconButton>
+        </Tooltip>
+          <Tooltip title="Invitations">
+          <IconButton color="inherit" onClick={handleNotificationMenuOpen} sx={{ mr: 1 }}>
+            <Badge badgeContent={invitations.length} color="error">
+              <Notifications size={20} />
+            </Badge>
+          </IconButton>
+        </Tooltip>
+          <TeamSelector />
           <FormControlLabel
             control={<Switch checked={darkMode} onChange={toggleDarkMode} size="small" color="default" />}
             label=""
@@ -115,7 +177,10 @@ const Header: React.FC<HeaderProps> = ({
       <Menu
         anchorEl={anchorEl}
         open={Boolean(anchorEl)}
-        onClose={handleMenuClose}
+        onClick={() => {
+       handleMenuClose()
+       navigate('/settings')
+     }}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
@@ -128,21 +193,82 @@ const Header: React.FC<HeaderProps> = ({
           Déconnexion
         </MenuItem>
       </Menu>
-
+      {/* 🆕 Menu Alertes */}
       <Menu
-        anchorEl={notificationAnchorEl}
+  anchorEl={alertsAnchor}
+  open={Boolean(alertsAnchor)}
+  onClose={closeAlertsMenu}
+  anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+  transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+>
+  {alerts.length === 0 ? (
+    <MenuItem>Aucune alerte</MenuItem>
+  ) : (
+    alerts.map(a => (
+      <MenuItem
+        key={a.id}
+        onClick={() => {
+          markAlertRead(a.id);
+          closeAlertsMenu();
+          console.log('Alert clicked:', a); // Pour debug
+          // Navigation corrigée
+          navigate(`/projects/${a.project_id}`);
+        }}
+      >
+        {a.message}
+      </MenuItem>
+    ))
+  )}
+</Menu>
+      {/* Menu des invitations */}
+      <Menu
+       anchorEl={notificationAnchorEl}
         open={Boolean(notificationAnchorEl)}
         onClose={handleNotificationMenuClose}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
-        <MenuItem onClick={handleNotificationMenuClose}>
-          <Typography variant="subtitle2">Nouveau projet créé</Typography>
-          <Typography variant="caption" color="text.secondary">
-            Il y a 5 minutes
-          </Typography>
-        </MenuItem>
-        {/* … autres notifications … */}
+        {invitations.length === 0 && (
+          <MenuItem>Aucune invitation</MenuItem>
+        )}
+        {invitations.map(inv => (
+          <MenuItem key={inv.team.id} sx={{ whiteSpace: 'normal' }}>
+            <Box flexGrow={1}>
+              <Typography variant="subtitle2">
+                Invitation à rejoindre <b>{inv.team.name}</b>
+              </Typography>
+            </Box>
+            <Button
+  size="small"
+  onClick={async () => {
+    const res = await api(`/teams/${inv.team.id}/members/me/accept`, { method:'PUT' });
+    if (res.ok) {
+      setTeamId(inv.team.id);  // bascule dans la nouvelle équipe
+      fetchInvitations();      // recharge les invitations
+    } else {
+      alert('Erreur lors de l’acceptation');
+    }
+  }}
+>
+  Accepter
+</Button>
+
+    <Button
+  size="small"
+  color="error"
+  onClick={async () => {
+    const res = await api(`/teams/${inv.team.id}/members/me`, { method:'DELETE' });
+    if (res.ok) {
+      fetchInvitations();      // recharge les invitations
+    } else {
+      alert('Erreur lors du refus');
+    }
+  }}
+>
+  Refuser
+</Button>
+          </MenuItem>
+        ))}
       </Menu>
     </AppBar>
   );

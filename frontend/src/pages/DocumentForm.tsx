@@ -13,7 +13,7 @@ import { Save, ArrowLeft, FileText, Upload } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useAuth } from "../context/AuthContext";
-import { useAuthFetch } from "../utils/authFetch";
+import { useApi } from "../api/client";
 export default function DocumentForm() {
   const { id } = useParams<{ id?: string }>();
   const isNew = !id || id === "new";
@@ -23,12 +23,12 @@ export default function DocumentForm() {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [uploading, setUploading] = useState(false);
-  const authFetch = useAuthFetch()
+  const api = useApi()
 
   // Load existing document
   useEffect(() => {
     if (!isNew) {
-        authFetch(`http://127.0.0.1:8000/documents/${id}`, {
+        api(`/documents/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
         .then((r) => (r.ok ? r.json() : Promise.reject(r.statusText)))
@@ -42,10 +42,10 @@ export default function DocumentForm() {
 
   // Create or update
   const save = async () => {
-    const url = `http://127.0.0.1:8000/documents/${isNew ? "" : id}`;
+    const url = `/documents/${isNew ? "" : id}`;
     const method = isNew ? "POST" : "PUT";
     try {
-      const res = await authFetch(url, {
+      const res = await api(url, {
         method,
         headers: {
           "Content-Type": "application/json",
@@ -67,7 +67,7 @@ export default function DocumentForm() {
     const form = new FormData();
     form.append("file", file);
     setUploading(true);
-    const res = await authFetch("http://127.0.0.1:8000/documents/upload-pdf", {
+    const res = await api("/documents/upload-pdf", {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
       body: form,
@@ -85,8 +85,8 @@ export default function DocumentForm() {
     setUploading(true);
     const form = new FormData();
     form.append("file", file);
-    const res = await authFetch(
-      `http://127.0.0.1:8000/documents/${id}/images`,
+    const res = await api(
+      `/documents/${id}/images`,
       {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },

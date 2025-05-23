@@ -8,7 +8,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useAuth } from '../context/AuthContext'
 import { ProtectedImage } from '../components/ProtectedImage'
-import { useAuthFetch } from '../utils/authFetch'
+import { useApi } from '../api/client'
 
 interface Document {
   id: number
@@ -28,12 +28,12 @@ export default function DocumentView() {
   const [doc, setDoc] = useState<Document | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>()
-  const authFetch = useAuthFetch()
+  const api = useApi()
 
 
   useEffect(() => {
     if (!id) return
-    authFetch(`http://127.0.0.1:8000/documents/${id}`, {
+    api(`/documents/${id}`, {
       headers: { Authorization: `Bearer ${token}` },
       credentials: 'include'
     })
@@ -45,8 +45,8 @@ export default function DocumentView() {
 
   const downloadPdf = async () => {
     if (!doc) return
-    const res = await authFetch(
-      `http://127.0.0.1:8000/documents/${doc.id}/download-pdf`,
+    const res = await api(
+      `/documents/${doc.id}/download-pdf`,
       { headers: { Authorization: `Bearer ${token}` }, credentials: 'include' }
     )
     if (!res.ok) throw new Error(await res.text())
@@ -86,7 +86,7 @@ export default function DocumentView() {
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
             img: ({ src="", alt }) => (
               <ProtectedImage
-                src={src.startsWith("/") ? `http://127.0.0.1:8000${src}` : src}
+                src={src}
                 alt={alt} style={{ display:'block', maxWidth:'100%', margin:'1em 0' }}
               />
             )

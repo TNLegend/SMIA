@@ -7,6 +7,7 @@ import {
 } from '@mui/material';
 import { ArrowLeft, Check, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useApi } from '../api/client';
 
 interface Payload {
   title: string;          // <-- renamed
@@ -28,12 +29,10 @@ export default function EditProject() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string|null>(null);
-
+  const api = useApi();
   // 1) fetch existing project
   useEffect(() => {
-    fetch(`http://127.0.0.1:8000/projects/${id}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
+    api(`/projects/${id}`)
       .then(r => {
         if (r.status === 401) { logout(); throw new Error('Session expirée'); }
         if (!r.ok) throw new Error(`Erreur ${r.status}`);
@@ -59,7 +58,7 @@ export default function EditProject() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`http://127.0.0.1:8000/projects/${id}`, {
+      const res = await api(`/projects/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type':'application/json',

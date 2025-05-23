@@ -1,97 +1,99 @@
 # app/routers/models.py
+from __future__ import annotations
 
-import os
-import shutil
-import zipfile , ast
+import os, shutil, zipfile, ast, queue, asyncio, traceback, subprocess
 from io import BytesIO
-import shlex
-import subprocess
 from datetime import datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import List
-import queue
+from typing import List, Literal, Optional
+
 import pandas as pd
 from fastapi import (
-    APIRouter,
-    BackgroundTasks,
-    Depends,
-    File,
-    HTTPException,
-    UploadFile,
-    status, Body,Request
+    APIRouter, BackgroundTasks, Depends, File, HTTPException,
+    UploadFile, status, Body, Request
 )
-from fastapi.responses import JSONResponse,Response
-from pydantic import BaseModel, ValidationError, Field
+from fastapi.responses import JSONResponse, Response, PlainTextResponse
+from pydantic import BaseModel, ValidationError, Field, model_validator
+from ruamel.yaml import YAML
+from sse_starlette.sse import EventSourceResponse
 from sqlmodel import Session, select
+
 from app.template_files import EVALUATE_PY
 from app.auth import User, get_current_user
 from app.db import SessionLocal
-from app.models import AIProject, ModelRun, DataSet, DataConfig, DataConfigCreate, ModelArtifact
-from ruamel.yaml import YAML
-from sse_starlette.sse import EventSourceResponse
-import asyncio
-from app.utils.dependencies import assert_owner,get_session
-import traceback
-from fastapi.responses import PlainTextResponse
+from app.models import (
+    AIProject, ModelRun, DataSet, DataConfig, DataConfigCreate,
+    ModelArtifact, TeamMembership
+)
+from app.utils.dependencies import get_session, assert_owner   # assert_owner = “propriétaire”
+# ---------------------------------------------------------------------------
 
-MAX_ZIP_SIZE = 50 * 1024 * 1024  # 50 MiB
+MAX_ZIP_SIZE = 50 * 1024 * 1024          # 50 MiB
 REQUIRED_TEMPLATE_FILES = {"train.py", "model.py", "config.yaml", "requirements.txt"}
 
-# ────────────────────────────────────────────────────────────────────────────
-
-router = APIRouter(prefix="/projects/{project_id}/model", tags=["model"])
-
+# ───────────────────────── helpers ─────────────────────────────────────────
+def _assert_member(sess: Session, team_id: int, user: User) -> None:
+    """403 si l’utilisateur n’est pas membre (invitation acceptée)."""
+    mem = sess.exec(
+        select(TeamMembership).where(
+            TeamMembership.team_id == team_id,
+            TeamMembership.user_id == user.id,
+            TeamMembership.accepted_at.is_not(None),
+        )
+    ).first()
+    if not mem:
+        raise HTTPException(403, "Accès interdit à cette équipe")
 
 def to_docker_path(p: Path) -> str:
-    # 1) C:\dir\file → C:/dir/file
-    # 2) entoure de guillemets si le chemin contient un espace
     s = str(p).replace("\\", "/")
     return f'"{s}"' if " " in s else s
-# ─────────────────────────── Upload du code modèle ─────────────────────────
 
-@router.post("/upload_model", status_code=200, summary="Upload du ZIP contenant le code du modèle")
+# ───────────────────────── Router ──────────────────────────────────────────
+router = APIRouter(
+    prefix="/teams/{team_id}/projects/{project_id}/model",
+    tags=["model"]
+)
+
+# ═════════════════════ Upload du code modèle ═══════════════════════════════
+@router.post("/upload_model", status_code=200,
+             summary="Upload du ZIP contenant le code du modèle")
 async def upload_model_code(
+    team_id: int,
     project_id: int,
-    zip_file: UploadFile = File(..., description="Archive .zip avec train.py, model.py, config.yaml, requirements.txt"),
+    zip_file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     sess: Session = Depends(get_session),
 ):
-    # Vérification des droits
-    proj = sess.get(AIProject, project_id)
-    if not proj:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Projet introuvable")
-    if proj.owner != current_user.username:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Accès interdit")
-        # header Content-Type
-    if zip_file.content_type not in ("application/zip", "application/x-zip-compressed"):
-        raise HTTPException(400, "Il faut un .zip valide")
+    _assert_member(sess, team_id, current_user)
 
-    # Sauvegarde temporaire du zip
+    proj = sess.get(AIProject, project_id)
+    if not proj or proj.team_id != team_id:
+        raise HTTPException(404, "Projet introuvable")
+    if proj.owner != current_user.username:
+        raise HTTPException(403, "Seul le propriétaire peut uploader le code")
+
+    if zip_file.content_type not in ("application/zip", "application/x-zip-compressed"):
+        raise HTTPException(400, "Il faut un fichier ZIP valide")
+
     tmp = NamedTemporaryFile(delete=False, suffix=".zip")
     try:
         raw = await zip_file.read()
         if len(raw) > MAX_ZIP_SIZE:
-
             raise HTTPException(413, "Archive trop volumineuse (max 50 MiB)")
-          # sniff MIME type
 
-        # pour ZIP
         try:
-            z = zipfile.ZipFile(BytesIO(raw))
+            zipfile.ZipFile(BytesIO(raw))
         except zipfile.BadZipFile:
-            raise HTTPException(400, "Ce n'est pas un ZIP valide ou le fichier est corrompu")
-        tmp.write(raw)
-        tmp.flush()
+            raise HTTPException(400, "ZIP corrompu ou invalide")
+
+        tmp.write(raw); tmp.flush()
 
         with zipfile.ZipFile(tmp.name) as z:
             root_files = {Path(f).name for f in z.namelist() if "/" not in f.strip("/")}
             missing = REQUIRED_TEMPLATE_FILES - root_files
             if missing:
-                return JSONResponse(
-                    status_code=400,
-                    content={"ok": False, "missing": sorted(missing)},
-                )
+                return JSONResponse({"ok": False, "missing": sorted(missing)}, status_code=400)
 
             dest = Path(__file__).resolve().parents[2] / "storage" / "models" / f"project_{project_id}"
             if dest.exists():
@@ -99,104 +101,91 @@ async def upload_model_code(
             dest.mkdir(parents=True, exist_ok=True)
             z.extractall(dest)
             (dest / "evaluate.py").write_text(EVALUATE_PY, encoding="utf-8")
-
     finally:
-        tmp.close()
-        Path(tmp.name).unlink(missing_ok=True)
+        tmp.close(); Path(tmp.name).unlink(missing_ok=True)
 
-    return {"ok": True, "files": sorted(p.name for p in dest.iterdir())}
+    files = sorted(p.name for p in dest.iterdir() if p.is_file() and p.name != "evaluate.py")
+    return {"ok": True, "files": files}
 
+# ───────────────────── Vérif template avant upload ─────────────────────────
 class TemplateCheckResult(BaseModel):
     ok: bool
     missing_files: List[str]
     missing_functions: List[str]
 
-@router.post(
-    "/template/check",
-    summary="Vérifie un ZIP modèle avant upload",
-    response_model=TemplateCheckResult,
-)
+@router.post("/template/check", response_model=TemplateCheckResult)
 async def check_model_template(
+    team_id: int,
     project_id: int,
-    zip_file: UploadFile = File(..., description="Archive ZIP à vérifier"),
+    zip_file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     sess: Session = Depends(get_session),
 ):
-    # droits
-    assert_owner(sess, project_id, current_user)
+    _assert_member(sess, team_id, current_user)
+    proj = sess.get(AIProject, project_id)
+    if not proj or proj.team_id != team_id:
+        raise HTTPException(404, "Projet introuvable")
 
-    # 1) vérif du type
-    if zip_file.content_type not in  ["application/zip","application/x-zip-compressed"]:
-        raise HTTPException(400, "Il faut un fichier ZIP valide (.zip)")
+    if zip_file.content_type not in ("application/zip", "application/x-zip-compressed"):
+        raise HTTPException(400, "ZIP attendu")
+
     data = await zip_file.read()
-
-    # 2) ouverture du ZIP
     try:
         z = zipfile.ZipFile(BytesIO(data))
     except zipfile.BadZipFile:
-        raise HTTPException(400, "Fichier ZIP corrompu ou invalide")
+        raise HTTPException(400, "ZIP corrompu ou invalide")
 
-    # 3) fichiers racine attendus
-    root_files = { Path(f).name for f in z.namelist() if "/" not in f.strip("/") }
+    root_files = {Path(f).name for f in z.namelist() if "/" not in f.strip("/")}
     missing_files = sorted(REQUIRED_TEMPLATE_FILES - root_files)
+    missing_funcs: list[str] = []
 
-    # 4) vérif des signatures dans train.py et model.py
-    missing_functions: list[str] = []
-
-    if "train.py" in root_files:
-        src = z.read("train.py").decode("utf-8")
-        tree = ast.parse(src)
-        if not any(isinstance(n, ast.FunctionDef) and n.name == "train_and_save_model" for n in tree.body):
-            missing_functions.append("train_and_save_model()")
-
-    if "model.py" in root_files:
-        src = z.read("model.py").decode("utf-8")
-        tree = ast.parse(src)
-        if not any(isinstance(n, ast.ClassDef) and n.name == "MyModel" for n in tree.body):
-            missing_functions.append("class MyModel")
+    if "train.py" in root_files and "def train_and_save_model" not in z.read("train.py").decode():
+        missing_funcs.append("train_and_save_model()")
+    if "model.py" in root_files and "class MyModel" not in z.read("model.py").decode():
+        missing_funcs.append("class MyModel")
 
     return TemplateCheckResult(
-        ok=not missing_files and not missing_functions,
+        ok=not missing_files and not missing_funcs,
         missing_files=missing_files,
-        missing_functions=missing_functions,
+        missing_functions=missing_funcs,
     )
-# ─────────────────────────── Lancement d’entraînement ──────────────────────
 
+# ═════════════════════ Lancement d’entraînement ════════════════════════════
 class TrainRequest(BaseModel):
     dataset_id: int
 
-
-@router.post("/train", status_code=202, summary="Démarre l’entraînement en tâche de fond")
+@router.post("/train", status_code=202)
 def launch_training(
+    team_id: int,
     project_id: int,
     payload: TrainRequest,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     sess: Session = Depends(get_session),
 ):
-    # 1) droits et existence du projet
-    proj = sess.get(AIProject, project_id)
-    if not proj or proj.owner != current_user.username:
-        raise HTTPException(status.HTTP_403_FORBIDDEN)
-     # quota max de runs simultanés
-    existing = sess.exec(
-             select(ModelRun).where(ModelRun.project_id == project_id)
-        ).all()
-    if len(existing) >= 10:
-        raise HTTPException(403, "Vous avez déjà 10 runs actifs, supprimez-en avant d'en lancer un autre")
-    # 3) lookup du dataset
-    ds = sess.get(DataSet, payload.dataset_id)
+    _assert_member(sess, team_id, current_user)
 
+    proj = sess.get(AIProject, project_id)
+    if not proj or proj.team_id != team_id:
+        raise HTTPException(404, "Projet introuvable")
+    if proj.owner != current_user.username:
+        raise HTTPException(403, "Seul le propriétaire peut lancer un entraînement")
+
+    # quota de runs
+    n_runs = sess.exec(select(ModelRun.id).where(ModelRun.project_id == project_id)).all()
+    if len(n_runs) >= 10:
+        raise HTTPException(403, "Quota de 10 runs atteint")
+
+    ds = sess.get(DataSet, payload.dataset_id)
     if not ds or ds.project_id != project_id:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "dataset_id invalide")
-    # 4) création du ModelRun
+        raise HTTPException(400, "dataset_id invalide")
+
     run = ModelRun(project_id=project_id, status="pending")
-    sess.add(run)
-    sess.commit()
-    sess.refresh(run)
-    # 5) on passe le chemin absolu au background task
+    sess.add(run); sess.commit(); sess.refresh(run)
+
     background_tasks.add_task(_do_training, project_id, run.id, ds.path)
     return {"run_id": run.id, "status": run.status}
+
 
 
 log_channels: dict[int, queue.SimpleQueue[str]] = {}        # run_id -> queue
@@ -213,7 +202,8 @@ def _do_training(project_id: int, run_id: int, train_data_path: str):
         run = sess.get(ModelRun, run_id)
         run.started_at = datetime.utcnow()
         run.status = "running"
-        sess.add(run); sess.commit()
+        sess.add(run)
+        sess.commit()
 
     base_dir = Path(__file__).resolve().parents[2] / "storage" / "models" / f"project_{project_id}"
     output_dir = base_dir / "output"
@@ -222,10 +212,8 @@ def _do_training(project_id: int, run_id: int, train_data_path: str):
     # ─── 1) Snapshot pour la dérive ────────────────────────────────────────
     ref_stats = base_dir / "ref_stats.csv"
     q = log_channels.setdefault(run_id, queue.SimpleQueue())
-    # 1) le fichier d’entraînement doit être lisible
     if not os.access(train_data_path, os.R_OK):
         q.put(f"Error: impossible de lire {train_data_path} (permission denied)")
-    # 2) le dossier base_dir doit être inscriptible
     elif not os.access(base_dir, os.W_OK):
         q.put(f"Error: impossible d’écrire dans {base_dir} (permission denied)")
     else:
@@ -238,24 +226,17 @@ def _do_training(project_id: int, run_id: int, train_data_path: str):
             for line in tb.splitlines():
                 q.put(line)
 
-    # mount the project dir as /code, then inside the container:
-    # 1) install the user’s requirements.txt
-    # 2) run train.py
     code_path = to_docker_path(base_dir)
     data_path = to_docker_path(Path(train_data_path))
     output_path = to_docker_path(output_dir)
     cmd = [
         "docker", "run", "--rm",
         "--cpus=2.0", "--memory=4g", "--network=none",
-
-        # ⬇️  Écrase complètement l’ENTRYPOINT défini dans l’image
         "--entrypoint", "/bin/sh",
-
         "-v", f"{code_path}:/code",
         "-v", f"{data_path}:/data/train.csv",
         "-v", f"{output_path}:/output",
         "smia-runtime:latest",
-
         "-c",
         (
             "pip install --no-cache-dir -r /code/requirements.txt && "
@@ -267,15 +248,9 @@ def _do_training(project_id: int, run_id: int, train_data_path: str):
     ]
 
     try:
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         for line in iter(proc.stdout.readline, ""):
             q.put(line.rstrip("\n"))
-        # timeout après 1 h
         ret_code = proc.wait(timeout=60 * 60)
     except subprocess.TimeoutExpired:
         proc.kill()
@@ -287,7 +262,7 @@ def _do_training(project_id: int, run_id: int, train_data_path: str):
 
     q.put(f"Training finished, exit code = {ret_code}")
 
-    # ─── 3) Recherche déterministe de l'artefact ───────────────────────────
+    # ─── 3) Recherche de l’artéfact ───────────────────────────────────────
     artifact_path = None
     for name in ("model.pt", "model.joblib", "model.onnx"):
         candidate = output_dir / name
@@ -299,19 +274,17 @@ def _do_training(project_id: int, run_id: int, train_data_path: str):
         size = artifact_path.stat().st_size
         basic_metrics = {"exit_code": ret_code}
         with SessionLocal() as sess:
-            sess.add(
-                ModelArtifact(
-                    project_id=project_id,
-                    model_run_id=run_id,
-                    path=str(artifact_path.resolve()),
-                    format=artifact_path.suffix.lstrip("."),
-                    size_bytes=size,
-                    metrics=basic_metrics,
-                )
-            )
+            sess.add(ModelArtifact(
+                project_id=project_id,
+                model_run_id=run_id,
+                path=str(artifact_path.resolve()),
+                format=artifact_path.suffix.lstrip("."),
+                size_bytes=size,
+                metrics=basic_metrics,
+            ))
             sess.commit()
 
-    # ─── 4) Collecte des logs et mise à jour finale ────────────────────────
+    # ─── 4) Collecte des logs + MAJ ModelRun ─────────────────────────────
     collected = []
     while not q.empty():
         collected.append(q.get_nowait())
@@ -322,29 +295,53 @@ def _do_training(project_id: int, run_id: int, train_data_path: str):
         run.finished_at = datetime.utcnow()
         run.logs = "\n".join(collected)
         run.status = "succeeded" if ret_code == 0 else "failed"
-        sess.add(run); sess.commit()
+        sess.add(run)
+        sess.commit()
+
+    # ─── record training duration into AIProject.ai_details ─────────────
+    with SessionLocal() as sess3:
+        from app.models import AIProject
+        run = sess3.get(ModelRun, run_id)
+        duration = (run.finished_at - run.started_at).total_seconds()
+
+        proj = sess3.get(AIProject, project_id)
+        existing = proj.ai_details
+        if hasattr(existing, "dict"):
+            data = existing.dict()
+        else:
+            data = existing or {}
+
+        data["training_time"] = duration
+        proj.ai_details = data
+        sess3.add(proj)
+        sess3.commit()
 
 
 # ─────────────────────────── Consultation des runs ─────────────────────────
 
-@router.get("/runs", response_model=List[ModelRun], summary="Liste des runs d’entraînement")
+@router.get("/runs", response_model=List[ModelRun])
 def list_runs(
+    team_id: int,
     project_id: int,
     current_user: User = Depends(get_current_user),
     sess: Session = Depends(get_session),
 ):
-    if not sess.get(AIProject, project_id):
-        raise HTTPException(404, "Projet introuvable")
-    return sess.exec(select(ModelRun).where(ModelRun.project_id == project_id)).all()
+    _assert_member(sess, team_id, current_user)
+    return sess.exec(
+        select(ModelRun).where(ModelRun.project_id == project_id)
+    ).all()
 
 
-@router.get("/runs/{run_id}", response_model=ModelRun, summary="Détail d’un run")
+
+@router.get("/runs/{run_id}", response_model=ModelRun)
 def get_run(
+    team_id: int,
     project_id: int,
     run_id: int,
     current_user: User = Depends(get_current_user),
     sess: Session = Depends(get_session),
 ):
+    _assert_member(sess, team_id, current_user)
     run = sess.get(ModelRun, run_id)
     if not run or run.project_id != project_id:
         raise HTTPException(404, "Run introuvable")
@@ -353,20 +350,27 @@ def get_run(
 
 # ─────────────────────────── Upload des datasets ───────────────────────────
 
-@router.post("/upload_dataset", status_code=201, summary="Upload d’un dataset (train ou test)")
+# ─── Upload dataset
+@router.post("/upload_dataset", status_code=201)
 async def upload_dataset(
+    team_id: int,
     project_id: int,
-    kind: str = "train",  # ?kind=train|test
+    kind: str = "train",
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     sess: Session = Depends(get_session),
 ):
+    _assert_member(sess, team_id, current_user)
+
     if kind not in {"train", "test"}:
         raise HTTPException(400, "kind doit être 'train' ou 'test'")
 
     proj = sess.get(AIProject, project_id)
-    if not proj or proj.owner != current_user.username:
-        raise HTTPException(403)
+    if not proj or proj.team_id != team_id:
+        raise HTTPException(404)
+
+    if proj.owner != current_user.username:
+        raise HTTPException(403, "Seul le propriétaire peut uploader un dataset")
 
     data_dir = Path(__file__).resolve().parents[2] / "storage" / "data" / f"project_{project_id}"
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -414,98 +418,106 @@ yaml_ru.preserve_quotes = True
 
 # --- schéma minimal attendu dans config.yaml
 class ConfigSchema(BaseModel, extra="allow"):
-    target: str
-    hidden: int = Field(gt=0)
-    lr: float = Field(gt=0)
-    epochs: int = Field(gt=0)
+    task: Literal["regression", "classification", "clustering"]
+    target: Optional[str] = None
+    hidden: int = Field(gt=0); lr: float = Field(gt=0); epochs: int = Field(gt=0)
 
+    @model_validator(mode="after")
+    def _target_needed(cls, v):
+        if v.task in ("classification", "regression") and not v.target:
+            raise ValueError("`target` requis pour cette tâche")
+        return v
 
 def _config_path(project_id: int) -> Path:
-    base = Path(__file__).resolve().parents[2] / "storage" / "models" / f"project_{project_id}"
-    return base / "config.yaml"
+    return Path(__file__).resolve().parents[2] / "storage" / "models" / f"project_{project_id}" / "config.yaml"
 
-
-@router.get("/config", response_class=PlainTextResponse, summary="Récupère le YAML brut")
+@router.get("/config", response_class=PlainTextResponse)
 def read_config_yaml(
+    team_id: int,
     project_id: int,
     current_user: User = Depends(get_current_user),
     sess: Session = Depends(get_session),
 ):
-    assert_owner(sess, project_id, current_user)  # petite fonction utilitaire
+    _assert_member(sess, team_id, current_user)
     path = _config_path(project_id)
     if not path.exists():
-        raise HTTPException(404, "config.yaml introuvable – uploadez d’abord le modèle")
+        raise HTTPException(404, "config.yaml introuvable")
     return path.read_text(encoding="utf-8")
 
-
-@router.put("/config", summary="Met à jour le YAML après validation")
+@router.put("/config")
 def update_config_yaml(
+    team_id: int,
     project_id: int,
     body: str = Body(..., media_type="text/plain"),
     current_user: User = Depends(get_current_user),
     sess: Session = Depends(get_session),
 ):
+    # seule la/le propriétaire peut modifier
     assert_owner(sess, project_id, current_user)
+
     try:
         data = yaml_ru.load(body)
-    except Exception as exc:
-        raise HTTPException(400, f"YAML syntaxe invalide : {exc}")
-
-    # Validation pydantic
-    try:
         ConfigSchema.model_validate(data)
-    except ValidationError as exc:
-        raise HTTPException(422, exc.errors())
+    except ValidationError as ex:
+        raise HTTPException(422, ex.errors())
+    except Exception as ex:
+        raise HTTPException(400, f"YAML invalide : {ex}")
 
     path = _config_path(project_id)
     if not path.exists():
-        raise HTTPException(404, "config.yaml introuvable – uploadez d’abord le modèle")
+        raise HTTPException(404, "config.yaml introuvable")
 
-    # Écrire tout en conservant l’ordre et les commentaires
-    with _config_path(project_id).open("w", encoding="utf-8") as f:
+    with path.open("w", encoding="utf-8") as f:
         yaml_ru.dump(data, f)
     return {"ok": True}
 
-# ───────────────────────── DATA CONFIG ────────────────
+# ─── DataConfig
 @router.post("/data_config", response_model=DataConfig)
 def upsert_data_config(
+    team_id: int,
     project_id: int,
-    cfg: DataConfigCreate,                 # pydantic model avec dataset_id, …
+    cfg: DataConfigCreate,
     current_user: User = Depends(get_current_user),
     sess: Session = Depends(get_session),
 ):
-    assert_owner(sess, project_id, current_user)
+    assert_owner(sess, project_id, current_user)   # propriétaire uniquement
 
     # 1) vérifie dataset appartient au projet
-    ds = sess.get(DataSet, cfg.dataset_id)
-    if not ds or ds.project_id != project_id:
-        raise HTTPException(400, "dataset_id invalide")
+    train_ds = sess.get(DataSet, cfg.train_dataset_id)
+    test_ds = sess.get(DataSet, cfg.test_dataset_id)
+    if not train_ds or train_ds.project_id != project_id or train_ds.kind != "train":
+        raise HTTPException(400, "train_dataset_id invalide")
+    if not test_ds or test_ds.project_id != project_id or test_ds.kind != "test":
+        raise HTTPException(400, "test_dataset_id invalide")
 
     # 2) vérifie que target et features existent dans ds.columns
     for col in [cfg.target, *cfg.features, *cfg.sensitive_attrs]:
-        if col not in ds.columns:
+        if col not in train_ds.columns:
             raise HTTPException(422, f"Colonne inconnue: {col}")
 
     # 3) upsert
     dc = sess.exec(
-        select(DataConfig).where(DataConfig.dataset_id == cfg.dataset_id)
+        select(DataConfig).where(DataConfig.train_dataset_id == cfg.train_dataset_id)
     ).first()
     if dc:
         for k, v in cfg.model_dump().items():
             setattr(dc, k, v)
     else:
         dc = DataConfig.model_validate(cfg)
-    sess.add(dc); sess.commit(); sess.refresh(dc)
+    sess.add(dc);
+    sess.commit();
+    sess.refresh(dc)
     return dc
 
 
 @router.get("/data_config", response_model=DataConfig)
 def get_data_config(
+    team_id: int,
     project_id: int,
     current_user: User = Depends(get_current_user),
     sess: Session = Depends(get_session),
 ):
-    assert_owner(sess, project_id, current_user)
+    _assert_member(sess, team_id, current_user)
     dc = sess.exec(
         select(DataConfig).join(DataSet).where(DataSet.project_id == project_id)
     ).first()
@@ -513,15 +525,17 @@ def get_data_config(
         raise HTTPException(404, "DataConfig non trouvé")
     return dc
 
+# ─── Stream logs
 @router.get("/runs/{run_id}/stream", response_class=EventSourceResponse)
 async def stream_logs(
+    team_id: int,
     project_id: int,
     run_id: int,
     request: Request,
     current_user: User = Depends(get_current_user),
     sess: Session = Depends(get_session),
 ):
-    assert_owner(sess, project_id, current_user)
+    _assert_member(sess, team_id, current_user)
 
     q = log_channels.get(run_id)
     if q is None:
@@ -533,7 +547,6 @@ async def stream_logs(
         while True:
             if await request.is_disconnected():
                 break
-            # lit la file dans un thread pool pour ne pas bloquer la boucle
             line = await loop.run_in_executor(None, q.get)
             yield {"data": line}
 

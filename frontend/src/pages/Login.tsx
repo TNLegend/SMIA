@@ -14,8 +14,10 @@ import {
 } from "@mui/material";
 import { motion } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
-import { useAuthFetch } from "../utils/authFetch";
+import { useApi } from "../api/client";
 import { useEffect } from 'react'
+import { useTeam } from '../context/TeamContext';
+
 interface LoginProps {
   darkMode: boolean;
   toggleDarkMode: () => void;
@@ -31,7 +33,8 @@ const Login: React.FC<LoginProps> = ({ darkMode, toggleDarkMode }) => {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const authFetch = useAuthFetch()
+  const api = useApi()
+  const { setTeamId } = useTeam();
 
   const { isAuthenticated } = useAuth()
     useEffect(() => {
@@ -50,7 +53,7 @@ const Login: React.FC<LoginProps> = ({ darkMode, toggleDarkMode }) => {
 
     try {
       const body = new URLSearchParams({ username, password });
-      const res = await authFetch("http://127.0.0.1:8000/auth/login", {
+      const res = await api("/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body,
@@ -65,8 +68,26 @@ const Login: React.FC<LoginProps> = ({ darkMode, toggleDarkMode }) => {
         );
       }
 
+     // 1) on récupère le token et on l’enregistre
       const { access_token } = await res.json();
       login(access_token);
+
+      // 2) on charge la première équipe disponible
+      try {
+        const teamsRes = await api("/teams/", {
+          headers: { Authorization: `Bearer ${access_token}` }
+        });
+        if (teamsRes.ok) {
+          const teams = await teamsRes.json();
+          if (teams.length > 0) {
+            setTeamId(teams[0].id);            // ← on stocke la 1ʳᵉ équipe
+          }
+        }
+      } catch (e) {
+        console.error("Impossible de récupérer la liste des équipes", e);
+      }
+
+      // 3) redirection finale
       navigate("/dashboard");
     } catch (err: any) {
       setError(err.message);

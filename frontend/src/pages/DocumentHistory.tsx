@@ -12,7 +12,7 @@ import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 import { useAuth } from '../context/AuthContext'
 import { ProtectedImage } from "../components/ProtectedImage";
-import { useAuthFetch } from '../utils/authFetch'
+import { useApi } from '../api/client'
 interface HistoryEntry {
   version:     number
   created_at:  string
@@ -30,12 +30,12 @@ export default function DocumentHistory() {
   const [error, setError]     = useState<string>()
   const [open, setOpen]       = useState(false)
   const [sel, setSel]         = useState<HistoryEntry | null>(null)
-  const authFetch = useAuthFetch()
+  const api = useApi()
 
   useEffect(() => {
     if (!id) return
     setLoading(true)
-    authFetch(`http://127.0.0.1:8000/documents/${id}/history`, {
+    api(`/documents/${id}/history`, {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(r => r.ok ? r.json() : Promise.reject(r.statusText))
@@ -98,7 +98,7 @@ export default function DocumentHistory() {
    components={{
      img: ({ src = "", alt }) => (
       <ProtectedImage
-         src={src.startsWith("/") ? `http://127.0.0.1:8000${src}` : src}
+         src={src}
          alt={alt}
          style={{ display: "block", maxWidth: "100%", height: "auto", margin: "1em 0" }}
        />

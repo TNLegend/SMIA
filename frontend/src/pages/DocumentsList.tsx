@@ -1,13 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  Box, Button, Typography, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, Paper, IconButton,
-  CircularProgress
-} from '@mui/material'
+import { Box, Button, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, IconButton, CircularProgress, Alert } from '@mui/material'
 import { Plus, Eye, Edit, Trash2, History } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import { useAuthFetch } from '../utils/authFetch'
+import { useTeam } from '../context/TeamContext'
+import { useApi } from '../api/client'
 
 interface Document {
   id: number
@@ -23,12 +20,13 @@ export default function DocumentsList() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
   const { token } = useAuth()
+  const { teamId } = useTeam()
   const nav = useNavigate()
-  const authFetch = useAuthFetch()
+  const api = useApi()
   const load = async () => {
     setLoading(true)
     try {
-      const res = await authFetch('http://127.0.0.1:8000/documents/', {
+      const res = await api('/documents/', {
         headers: { Authorization: `Bearer ${token}` }
       })
       if (!res.ok) throw new Error(await res.text())
@@ -40,24 +38,37 @@ export default function DocumentsList() {
     }
   }
 
-  useEffect(() => { load() }, [token])
+   useEffect(() => {
+    if (teamId != null) {
+      load()
+    }
+  }, [token, teamId])
 
   const del = async (id: number) => {
     if (!confirm('Supprimer ce document ?')) return
-    await authFetch(`http://127.0.0.1:8000/documents/${id}`, {
+    await api(`/documents/${id}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` }
     })
     setDocs(docs.filter(d => d.id !== id))
   }
 
-  if (loading) return <Box textAlign="center" mt={4}><CircularProgress/></Box>
+// si aucune équipe n’est sélectionnée
+  if (teamId == null) {
+    return (
+      <Box textAlign="center" mt={4}>
+        <Alert severity="info">Veuillez sélectionner une équipe pour afficher les documents</Alert>
+      </Box>
+    )
+  }
+
+  if (loading) return <Box textAlign="center" mt={4}><CircularProgress/></Box> 
   if (error)   return <Typography color="error">{error}</Typography>
 
   return (
     <Box>
       <Box display="flex" justifyContent="space-between" mb={2}>
-        <Typography variant="h4">Documents</Typography>
+        <Typography variant="h4">Preuves</Typography>
         <Button
           variant="contained"
           startIcon={<Plus size={18}/>} 

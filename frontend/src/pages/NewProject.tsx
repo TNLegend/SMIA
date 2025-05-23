@@ -7,6 +7,7 @@ import {
 } from '@mui/material';
 import { ArrowLeft, Check, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useApi } from '../api/client';
 
 interface NewProjectPayload {
   title: string;
@@ -33,14 +34,14 @@ export default function NewProject() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement> | any) => {
     setPayload({ ...payload, [e.target.name]: e.target.value });
   };
-
+  const api = useApi();
   const submit = async () => {
     setLoading(true);
     setError(null);
 
     try {
       // Étape 1 : création du projet
-      const res = await fetch('http://127.0.0.1:8000/projects/', {
+      const res = await api('/projects/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -17,14 +17,17 @@ import Projects      from './pages/Projects'
 import ProjectDetail from './pages/ProjectDetail'
 import NewProject    from './pages/NewProject'
 import AIPolicy      from './pages/AIPolicy'
-import RiskAnalysis  from './pages/RiskAnalysis'
-import Reports       from './pages/Reports'
+
 
 import DocumentsList   from './pages/DocumentsList'
 import DocumentForm    from './pages/DocumentForm'
 import DocumentHistory from './pages/DocumentHistory'
 import DocumentView    from './pages/DocumentView'
 import EditProject   from './pages/EditProject'
+import Settings   from './pages/Settings'
+import { TeamProvider } from './context/TeamContext'
+import TeamsPage     from './pages/Teams'
+import TeamDetailPage from './pages/TeamDetailPage'
 function PublicRoute({ children }: { children: JSX.Element }) {
   const { isAuthenticated } = useAuth()
   return isAuthenticated ? <Navigate to="/dashboard" replace /> : children
@@ -39,6 +42,7 @@ function App() {
       <CssBaseline />
       <BrowserRouter>
         <AuthProvider>
+          <TeamProvider>
           <Routes>
             {/* Public */}
             <Route
@@ -85,6 +89,19 @@ function App() {
                 }
               />
               <Route
+                path="/teams"
+                element={
+                  <Layout darkMode={darkMode} toggleDarkMode={toggleDarkMode}>
+                    <TeamsPage />
+                  </Layout>
+                }
+              />
+              <Route path="/teams/:teamId" element={
+                <Layout darkMode={darkMode} toggleDarkMode={toggleDarkMode}>
+                <TeamDetailPage />
+                </Layout>
+                } />
+              <Route
                 path="/projects/new"
                 element={
                   <Layout darkMode={darkMode} toggleDarkMode={toggleDarkMode}>
@@ -113,23 +130,9 @@ function App() {
                   </Layout>
                 }
               />
-              <Route
-                path="/risk-analysis"
-                element={
-                  <Layout darkMode={darkMode} toggleDarkMode={toggleDarkMode}>
-                    <RiskAnalysis />
-                  </Layout>
-                }
-              />
-              <Route
-                path="/reports"
-                element={
-                  <Layout darkMode={darkMode} toggleDarkMode={toggleDarkMode}>
-                    <Reports />
-                  </Layout>
-                }
-              />
-
+              
+      
+            
               {/* Documents */}
               <Route
                 path="/documents"
@@ -171,11 +174,20 @@ function App() {
                   </Layout>
                 }
               />
+              <Route
+               path="/settings"
+              element={
+                 <Layout darkMode={darkMode} toggleDarkMode={toggleDarkMode}>
+                   <Settings />
+                 </Layout>
+               }
+             />
             </Route>
 
             {/* 404 */}
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </TeamProvider>
         </AuthProvider>
       </BrowserRouter>
     </ThemeProvider>

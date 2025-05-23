@@ -97,9 +97,11 @@ const LineChart = ({
                   font: {
                     size: 10,
                   },
-                  callback: function(value) {
-                    return value;
-                  }
+                  callback: function(value: string | number) {
+                  const numericValue = typeof value === 'string' ? parseFloat(value) : value;
+                  return numericValue.toFixed(2);
+                }
+
                 },
               },
             },

@@ -1,6 +1,8 @@
 /* eslint-disable react-hooks/exhaustive-deps */
+import EvaluationRisks from '../components/EvaluationRisks'
 import React, { useState, useEffect, useCallback } from 'react'
 import { useParams, Link as RouterLink, useNavigate } from 'react-router-dom'
+import { useTeam } from '../context/TeamContext';
 import {
   Box,
   Breadcrumbs,
@@ -59,7 +61,7 @@ import {
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import PieChart from '../components/charts/PieChart'
 import { useAuth } from '../context/AuthContext'
-import { useAuthFetch } from '../utils/authFetch';
+import { useApi } from '../api/client';
 import { useDropzone, type FileRejection, type DropzoneOptions } from 'react-dropzone';
 import { EventSourcePolyfill } from 'event-source-polyfill';
 
@@ -116,12 +118,15 @@ const RESULT_LABELS: Record<string, string> = {
 }
 
 /* utilitaire téléchargement protégé */
-function downloadWithAuth(url: string, token: string, filename = 'evidence') {
+function downloadWithAuth(
+  api: ReturnType<typeof useApi>,      // ← on reçoit l’api du composant
+  url: string,
+  token: string,
+  filename = 'evidence'
+) {
   return async () => {
     try {
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const res = await api(url);
       if (res.status === 401) {
         alert('Session expirée, veuillez vous reconnecter.')
         return
@@ -163,33 +168,45 @@ interface ISO42001ChecklistItem {
 }
 interface ProofLink { proof_id: number; evidence_id: string; filename: string; download_url: string }
 interface Comment { id: string; author: string; date: string; content: string }
-interface AIData { type: string; model: string; framework: string; datasetSize: string; featuresCount: number; accuracy: number; trainingTime: string }
+interface AIData { type: string; model: string; framework: string; datasetSize: string; featuresCount: number; accuracy: number;r2:number; trainingTime: string }
 interface ProjectDetailAPI {
   id: string
+  teamId: number
   title: string
   description: string
   category: string
   owner: string
-  created: string
-  updated: string
+  createdAt: string
+  updatedAt : string
   status: 'draft'|'active'|'completed'|'on-hold'
-  riskLevel: 'low'|'medium'|'high'
   complianceScore: number
   progress: number
   domain: string
   tags: string[]
   phases?: Phase[]
-  team?: { name: string; role: string; avatar: string }[]
+  teamMembers: { name: string; role: string; avatar: string }[]
   risks?: Risk[]
   comments?: Comment[]
   aiDetails: AIData | null
 }
+interface NonConformiteType {
+  id: number;
+  checklist_item_id: number;
+  question_index: number;
+  type_nc: 'mineure' | 'majeure';
+  deadline_correction: string | null;
+  statut: 'non_corrigee' | 'en_cours' | 'corrigee';
+  created_at: string;
+  updated_at: string;
+}
+
 
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { token, logout } = useAuth()
-  const authFetch = useAuthFetch();
+  const { teamId }   = useTeam();
+  const api = useApi();
   if (!token) { logout(); return null }
   const t = token
 
@@ -214,9 +231,7 @@ export default function ProjectDetail() {
   const [editContent, setEditContent] = useState('')
   const refreshComments = async () => {
     try {
-      const r = await fetch(`http://127.0.0.1:8000/projects/${id}/comments`, {
-        headers:{ Authorization:`Bearer ${t}` }
-      })
+      const r = await api(`/projects/${id}/comments`)
       if(r.status===401){ logout(); return }
       if(!r.ok) throw new Error()
       const data:Comment[] = await r.json()
@@ -226,23 +241,44 @@ export default function ProjectDetail() {
 
   /* checklist */
   const [checklist, setChecklist] = useState<ISO42001ChecklistItem[]>([])
-  const recalcScores = (list: ISO42001ChecklistItem[]) => {
+  const recalcScores = useCallback((list: ISO42001ChecklistItem[]) => {
     const total = list.reduce((s,i)=>s + i.audit_questions.length,0)
     const done  = list.reduce((s,i)=>s + i.statuses.filter(x=>x==='done').length,0)
     const comp  = list.reduce((s,i)=>s + i.results.filter(x=>x==='compliant').length,0)
+    // guard against division by zero
+    const progress = total > 0 ? Math.round(done/total*100) : 0
+    const complianceScore = total > 0 ? Math.round(comp/total*100) : 0
     setProject(p=>p && ({
       ...p,
-      progress: Math.round(done/total*100),
-      complianceScore: Math.round(comp/total*100)
+      progress,
+      complianceScore
     }))
+  }, [setProject])
+
+  const loadProject = useCallback(async () => {
+  setLoading(true)
+  try {
+    const res = await api(
+      `/projects/${id}`,
+      { headers: { Authorization: `Bearer ${t}` } }
+    )
+    if (res.status === 401) { logout(); return }
+    if (!res.ok) throw new Error(`Erreur ${res.status}`)
+    const data: ProjectDetailAPI = await res.json()
+    setProject(data)
+  } catch (e: any) {
+    setError(e.message)
+  } finally {
+    setLoading(false)
   }
+}, [id, t, logout, api])
+
+
 
  const fetchChecklist = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`http://127.0.0.1:8000/projects/${id}/checklist`, {
-        headers: { Authorization: `Bearer ${t}` }
-      })
+      const res = await api(`/projects/${id}/checklist`)
 
       if (res.status === 401) {
         logout()
@@ -272,14 +308,37 @@ export default function ProjectDetail() {
     } finally {
       setLoading(false)
     }
-  }, [id, t, logout, recalcScores])
+ }, [id, t, logout, recalcScores])
 
-  useEffect(() => { if(tab===3) fetchChecklist() }, [tab,id,t])
+  useEffect(() => {
+  if (tab !== 3) return
+  let cancelled = false
+  const wrapper = async () => {
+    if (cancelled) return
+    await fetchChecklist()
+  }
+  wrapper()
+  return () => { cancelled = true }
+}, [tab, fetchChecklist])
 
 useEffect(() => {
-if (project) return
-refreshComments()
-}, [project])
+   if (tab === 1) {
+     refreshComments();
+   }
+ }, [tab]);
+
+interface ActionCorrective {
+  id: number;
+  description: string;
+  deadline: string | null;
+  status: string;
+  checklist_item_id: string;
+  non_conformite_id: number | null;
+  responsible_user_id: number | null;
+  updated_at?: string;
+  created_at?: string;
+}
+
 
   /* dialogue évaluation */
   const [dlgOpen, setDlgOpen] = useState(false)
@@ -290,12 +349,35 @@ refreshComments()
   const [formObs, setFormObs] = useState('')
   const [proofs, setProofs] = useState<ProofLink[]>([])
   const [files, setFiles] = useState<Record<string,File>>({})
+  const [actionsCorrectives, setActionsCorrectives] = useState<ActionCorrective[]>([])
+const [actionsLoading, setActionsLoading] = useState(false)
+const [actionsError, setActionsError] = useState<string | null>(null)
+
+// États pour formulaire action corrective
+const [actionEditing, setActionEditing] = useState<ActionCorrective | null>(null)
+const [actionFormOpen, setActionFormOpen] = useState(false)
+async function fetchActionsCorrectives(itemId: string) {
+  setActionsLoading(true)
+  setActionsError(null)
+  try {
+    const res = await api(`/projects/${id}/checklist/${itemId}/actions`)
+    if (res.status === 401) {
+      logout()
+      return
+    }
+    if (!res.ok) throw new Error(`Erreur ${res.status}`)
+    const data = await res.json()
+    setActionsCorrectives(data)
+  } catch (e: any) {
+    setActionsError(e.message)
+  } finally {
+    setActionsLoading(false)
+  }
+}
     async function loadProofs(itemId:string, qIdx:number){
     try {
-      const r = await fetch(
-        `http://127.0.0.1:8000/projects/${id}/checklist/${itemId}/questions/${qIdx}/proofs`,
-        { headers:{ Authorization:`Bearer ${t}` } }
-      )
+      const r = await api(
+        `/projects/${id}/checklist/${itemId}/questions/${qIdx}/proofs`)
       if(r.status===401){ logout(); return }
       if(!r.ok){ setProofs([]); return }
       setProofs(await r.json())
@@ -308,30 +390,30 @@ refreshComments()
   const steps = [
     'Importer le modèle',
     'Dataset entraînement',
+    'Dataset test',
     'Features / Target',
     'Config YAML',
     'Entraînement',
-    'Dataset test',
     'Évaluation'
   ];
   const [activeStep, setActiveStep] = useState(0);
 
   const isStepReady = (step: number): boolean => {
     switch (step) {
-      case 0:
-        return modelFiles.length > 0;
-      case 1:
-        return trainDatasetId !== null && datasetColumns.length > 0;
-      case 2:
-        return !!selectedTarget && selectedFeatures.length > 0;
-      case 3:
-        return true;              // rien à valider de plus ici
-      case 4:
-        return trainingFinished;
-      case 5:
-        return testDatasetColumns.length > 0;
-      case 6:
-        return evalFinished;
+      case 0: // modèle
+      return modelFiles.length > 0;
+    case 1: // train CSV
+      return trainDatasetId !== null && datasetColumns.length > 0;
+    case 2: // test CSV
+      return testDatasetId  !== null && testDatasetColumns.length > 0;
+    case 3: // features/target
+      return !!selectedTarget && selectedFeatures.length > 0;
+    case 4: // config.yaml
+      return configSaved;
+    case 5: // entraînement
+      return trainingFinished;
+    case 6: // évaluation
+      return evalFinished;
       default:
         return false;
     }
@@ -373,8 +455,8 @@ refreshComments()
 
   try {
     /* ───── 1. Vérification du template ───── */
-    let res = await authFetch(
-      `http://127.0.0.1:8000/projects/${id}/model/template/check`,
+    let res = await api(
+      `/projects/${id}/model/template/check`,
       {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` }, // on NE fixe PAS Content-Type
@@ -393,8 +475,8 @@ refreshComments()
     }
 
     /* ───── 2. Upload définitif ───── */
-    res = await authFetch(
-      `http://127.0.0.1:8000/projects/${id}/model/upload_model`,
+    res = await api(
+      `/projects/${id}/model/upload_model`,
       {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
@@ -419,27 +501,198 @@ const [selectedTarget, setSelectedTarget]     = useState<string | null>(null);
 const [selectedSensitive, setSelectedSensitive] = useState<string[]>([]);
 const [configYAML, setConfigYAML]     = useState<string>('')
 const [configError, setConfigError]   = useState<string>('')
+const [configSaved, setConfigSaved]   = useState<boolean>(false)
 // ─── Step 5: entraînement ───
 const [runId, setRunId] = useState<number | null>(null);
 const [trainingLogs, setTrainingLogs] = useState<string[]>([]);
 const [trainingLoading, setTrainingLoading] = useState(false);
 const [trainingFinished, setTrainingFinished] = useState(false);
 const [testDatasetId, setTestDatasetId] = useState<number | null>(null)
+const [dataConfigId, setDataConfigId] = useState<number | null>(null)
 const [testDatasetColumns, setTestDatasetColumns] = useState<string[]>([])
 const [evalRunId, setEvalRunId] = useState<number | null>(null)
 const [evalLogs, setEvalLogs] = useState<string[]>([])
 const [evalLoading, setEvalLoading] = useState(false)
 const [evalFinished, setEvalFinished] = useState(false)
-const startEval=async()=>{
-    setEvalLoading(true);
-    try{
-      const res=await authFetch(`/projects/${id}/evaluate`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${t}`},body:JSON.stringify({model_run_id:runId,test_data_id:testDatasetId,data_config_id:trainDatasetId})});
-      const json=await res.json(); setEvalRunId(json.eval_id);
-      // SSE for eval logs
-      const src=new EventSourcePolyfill(`/projects/${id}/evaluate/${json.eval_id}/stream`,{headers:{Authorization:`Bearer ${t}`}});
-      src.onmessage=e=>{ setEvalLogs(l=>[...l,e.data]); if(e.data.startsWith('Evaluation finished')){ setEvalFinished(true); src.close(); }};
-      src.onerror=()=>src.close();
-    }catch(e:any){alert(e.message);}finally{setEvalLoading(false);}  };
+const [ncDialogOpen, setNcDialogOpen] = useState(false);
+const [ncItemId, setNcItemId] = useState<string | null>(null);
+const [ncQuestionIndex, setNcQuestionIndex] = useState<number | null>(null);
+const [nonConformites, setNonConformites] = useState<NonConformiteType[]>([]);
+const [ncLoading, setNcLoading] = useState(false);
+const [ncError, setNcError] = useState<string | null>(null);
+// Nouveaux états pour éditer une NC individuelle
+const [ncEditing, setNcEditing] = useState<NonConformiteType | null>(null);
+async function saveNonConformite() {
+  if (!ncEditing || !ncItemId) return;
+
+  try {
+    setNcLoading(true);
+    const payload = {
+      type_nc: ncEditing.type_nc,
+  
+      deadline_correction: ncEditing.deadline_correction,
+      statut: ncEditing.statut,
+    };
+    const res = await api(
+      `/projects/${id}/checklist/${ncItemId}/nonconformites/${ncEditing.id}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(payload),
+      }
+    );
+    if (res.status === 401) {
+      logout();
+      return;
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Erreur inconnue' }));
+      throw new Error(err.detail || 'Erreur mise à jour');
+    }
+    // Met à jour la liste locale
+    setNonConformites(ncs =>
+      ncs.map(nc => (nc.id === ncEditing.id ? { ...ncEditing } : nc))
+    );
+    alert('Non-conformité mise à jour');
+  } catch (e: any) {
+    alert(`Erreur : ${e.message}`);
+  } finally {
+    setNcLoading(false);
+  }
+}
+
+
+async function openNcDialog(itemId: string, questionIdx: number) {
+  console.log('Opening NC Dialog for itemId:', itemId, 'questionIdx:', questionIdx);
+  setNcItemId(itemId);
+  setNcQuestionIndex(questionIdx);
+  setNcDialogOpen(true);
+
+  // appel direct pour forcer fetch avec le bon id
+  try {
+    setNcLoading(true);
+    setNcError(null);
+    const res = await api(`/projects/${id}/checklist/${itemId}/nonconformites?question_index=${questionIdx}`);
+    console.log('Response status:', res.status);
+    if (res.status === 401) {
+      logout();
+      return;
+    }
+    if (!res.ok) throw new Error(`Erreur ${res.status}`);
+    const data: NonConformiteType[] = await res.json();
+    console.log('NonConformites data:', data);
+    setNonConformites(data);
+    setNcEditing(data.length > 0 ? data[0] : null); // initialise l'édition avec la première NC
+    fetchActionsCorrectives(itemId)
+  } catch (e: any) {
+    setNcError(e.message);
+  } finally {
+    setNcLoading(false);
+  }
+}
+
+// Ouvre le formulaire pour modifier ou créer une action
+function editActionCorrective(action: ActionCorrective) {
+  setActionEditing(action)
+  setActionFormOpen(true)
+}
+
+// Supprime une action corrective
+async function deleteActionCorrective(actionId: number) {
+  if (!window.confirm('Supprimer cette action corrective ?')) return
+  try {
+    const action = actionsCorrectives.find(a => a.id === actionId)
+    if (!action) return
+    const res = await api(`/projects/${id}/checklist/${action.checklist_item_id}/actions/${actionId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) throw new Error(`Erreur suppression ${res.status}`)
+    await fetchActionsCorrectives(action.checklist_item_id)
+  } catch (e: any) {
+    alert(e.message)
+  }
+}
+
+// Sauvegarde (POST ou PUT) une action corrective
+async function saveActionCorrective() {
+  if (!actionEditing) return
+  const isNew = actionEditing.id === 0
+  try {
+    const urlBase = `/projects/${id}/checklist/${actionEditing.checklist_item_id}/actions`
+    const res = await api(
+      isNew ? urlBase : `${urlBase}/${actionEditing.id}`,
+      {
+        method: isNew ? 'POST' : 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(actionEditing),
+      }
+    )
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: `Erreur ${res.status}` }))
+      throw new Error(err.detail || 'Erreur sauvegarde action corrective')
+    }
+    await fetchActionsCorrectives(actionEditing.checklist_item_id)
+    setActionFormOpen(false)
+  } catch (e: any) {
+    alert(e.message)
+  }
+}
+
+
+
+
+
+const startEval = async () => {
+  setEvalLoading(true)
+  try {
+    // Lance l’évaluation sur la bonne route
+    const res = await api(
+      `/projects/${id}/evaluate`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${t}`,
+        },
+        body: JSON.stringify({
+          model_run_id: runId,
+          data_config_id: dataConfigId,   // <<< on passe l’ID du DataConfig, pas du DataSet
+        }),
+      }
+    )
+    if (!res.ok) throw new Error(`Erreur ${res.status}`)
+    
+    // On récupère l’ID de l’évaluation
+    const { eval_id } = await res.json()
+    setEvalRunId(eval_id)
+    
+    // Ouvre le stream SSE sur la bonne route
+    const src = new EventSourcePolyfill(
+      `${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/teams/${teamId}/projects/${id}/evaluations/${eval_id}/stream`,
+      { headers: { Authorization: `Bearer ${t}` } }
+    )
+    src.onmessage = (e) => {
+  setEvalLogs(logs => [...logs, e.data])
+  if (
+    e.data.startsWith('Evaluation finished')
+    || e.data.startsWith('✅ All done')
+  ) {
+    src.close()
+    setEvalFinished(true)
+    loadProject()
+    window.location.reload()
+  }
+}
+    src.onerror = () => src.close()
+  } catch (e: any) {
+    alert(e.message)
+  } finally {
+    setEvalLoading(false)
+  }
+}
+
+
 
 
 // Nouveau handler pour l’étape 2
@@ -464,8 +717,8 @@ const onDropDataset = async (
   form.append('file', file, file.name) // 👉 le champ 'file' côté back
 
   try {
-    const res = await authFetch(
-      `http://127.0.0.1:8000/projects/${id}/model/upload_dataset?kind=train`,
+    const res = await api(
+      `/projects/${id}/model/upload_dataset?kind=train`,
       {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
@@ -508,8 +761,8 @@ const onDropTestDataset = async (
   form.append('file', file, file.name) // 👉 le champ 'file' côté back
 
   try {
-    const res = await authFetch(
-      `http://127.0.0.1:8000/projects/${id}/model/upload_dataset?kind=test`,
+    const res = await api(
+      `/projects/${id}/model/upload_dataset?kind=test`,
       {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
@@ -533,8 +786,8 @@ const onDropTestDataset = async (
 const startTraining = async () => {
   setTrainingLoading(true);
   try {
-    const res = await authFetch(
-      `http://127.0.0.1:8000/projects/${id}/model/train`,
+    const res = await api(
+      `/projects/${id}/model/train`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -555,7 +808,7 @@ const startTraining = async () => {
 useEffect(() => {
   if (!runId) return;
   const src = new EventSourcePolyfill(
-    `http://127.0.0.1:8000/projects/${id}/model/runs/${runId}/stream`,
+    `${import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'}/teams/${teamId}/projects/${id}/model/runs/${runId}/stream`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   src.onmessage = e => {
@@ -571,42 +824,51 @@ useEffect(() => {
 
 
   /* charger projet */
-  useEffect(() => {
-    fetch(`http://127.0.0.1:8000/projects/${id}`, {
-      headers: { Authorization: `Bearer ${t}` }
-    })
-    .then(async r => {
-      if (r.status===401){ logout(); throw new Error('Session expirée') }
-      if (!r.ok) throw new Error(`Erreur ${r.status}`)
-      return r.json()
-    })
-    .then(setProject)
-    .catch(e=>setError(e.message))
-    .finally(()=>setLoading(false))
-  }, [id,t,logout])
+// keep your old loader but only fire once when `project` is null
 
-  
+useEffect(() => {
+  let cancelled = false;
+  setLoading(true);
+
+  api(`/projects/${id}`)
+    .then(async r => {
+      if (r.status === 401) {
+        logout();
+        throw new Error('Session expirée');
+      }
+      if (!r.ok) throw new Error(`Erreur ${r.status}`);
+      return r.json();
+    })
+    .then(data => { if (!cancelled) setProject(data) })
+    .catch(err => { if (!cancelled) setError(err.message) })
+    .finally(() => { if (!cancelled) setLoading(false) });
+
+  return () => { cancelled = true };
+}, [id, token, logout]);
+
+ 
   
   // charger le config.yaml quand on arrive à l'étape 4
   useEffect(() => {
     const loadConfig = async () => {
       try {
         setLoading(true)
-        const res = await authFetch(
-          `http://127.0.0.1:8000/projects/${id}/model/config`,
+        const res = await api(
+          `/projects/${id}/model/config`,
           { method: 'GET', headers: { Authorization: `Bearer ${t}` } }
         )
         if (!res.ok) throw new Error(`Erreur ${res.status}`)
         const text = await res.text()
         setConfigYAML(text)
         setConfigError('')
+        setConfigSaved(true)
       } catch (e: any) {
         setConfigError(e.message)
       } finally {
         setLoading(false)
       }
     }
-    if (activeStep === 3) loadConfig()
+    if (activeStep === 4) loadConfig()
   }, [activeStep, id, t])
 
   
@@ -651,8 +913,8 @@ useEffect(() => {
         const fd = new FormData()
         fd.append('file', f)
         fd.append('evidence_id', evId)
-        await fetch(
-          `http://127.0.0.1:8000/projects/${id}/checklist/${activeItem.id}/proofs`,
+        await api(
+          `/projects/${id}/checklist/${activeItem.id}/proofs`,
           {
             method:'POST',
             headers:{ Authorization:`Bearer ${t}` },
@@ -668,8 +930,8 @@ useEffect(() => {
       observation:formObs,
       questionIndex:activeQ
     }
-    const r = await fetch(
-      `http://127.0.0.1:8000/projects/${id}/checklist/${activeItem.id}`,
+    const r = await api(
+      `/projects/${id}/checklist/${activeItem.id}`,
       {
         method:'PUT',
         headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${t}` },
@@ -698,15 +960,67 @@ useEffect(() => {
   if(error)   return <Typography align="center" color="error" py={4}>{error}</Typography>
   if(!project) return null
 
-  const phases = project.phases ?? []
-  const team   = project.team   ?? []
-  const risks  = project.risks  ?? []
+
   const comments = project.comments ?? []
 
-  const riskIcon = (lvl:ProjectDetailAPI['riskLevel']) =>
-    lvl==='high'?<ShieldAlert size={16}/>
-    :lvl==='medium'?<AlertTriangle size={16}/>
-    :<CheckCircle2 size={16}/>
+
+// dans le handler "Suivant" de l'étape 3
+const saveDataConfig = async () => {
+  if (!trainDatasetId || !selectedTarget || selectedFeatures.length === 0) return;
+  const payload = {
+  train_dataset_id: trainDatasetId,
+  test_dataset_id:  testDatasetId,
+  features:          selectedFeatures,
+  target:            selectedTarget,
+  sensitive_attrs:   selectedSensitive,
+};
+  const res = await api(
+    `/projects/${id}/model/data_config`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || 'Erreur enreg. DataConfig');
+  }
+  // Récupère et stocke l’ID du DataConfig
+  const { id: data_config_id } = await res.json()
+  setDataConfigId(data_config_id);
+  };
+
+const handleNextStep4 = async () => {
+  try {
+    await saveDataConfig();
+    handleNext();
+  } catch (e: any) {
+    alert(e.message);
+  }
+};
+
+const saveConfigYaml = async () => {
+  try {
+    const res = await api(
+      `/projects/${id}/model/config`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'text/plain' },
+        body: configYAML,
+      }
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || `Erreur ${res.status}`);
+    }
+    // Optionnel : notification UI
+    setConfigSaved(true);
+    alert('config.yaml mis à jour');
+  } catch (e: any) {
+    alert(e.message);
+  }
+};
 
 
   return (
@@ -729,7 +1043,42 @@ useEffect(() => {
           <Typography variant="h4" sx={{ml:2}}>{project.title}</Typography>
         </Box>
         <Box>
-          <Button startIcon={<Download size={18}/>}>Exporter</Button>
+          <Button
+  startIcon={<Download size={18} />}
+  onClick={async () => {
+    try {
+      const res = await api(
+        `/reports/${id}/audit-risk-report.pdf`,
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      )
+      if (res.status === 401) {
+        alert('Session expirée, veuillez vous reconnecter.')
+        logout()
+        return
+      }
+      if (!res.ok) {
+        alert(`Erreur ${res.status} lors du téléchargement du rapport.`)
+        return
+      }
+      const blob = await res.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `rapport_projet_${id}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (e: any) {
+      alert(e.message)
+    }
+  }}
+>
+  Exporter
+</Button>
+
           <Button startIcon={<Edit size={18}/>} variant="contained" sx={{ml:1}} onClick={()=>navigate(`/projects/${id}/edit`)}>
             Modifier
           </Button>
@@ -740,7 +1089,6 @@ useEffect(() => {
       <Box display="flex" flexWrap="wrap" gap={1} mb={3}>
         <Chip label={project.category} size="small" color="primary"/>
         <Chip label={project.status} size="small"/>
-        <Chip icon={riskIcon(project.riskLevel)} label={`Risque ${project.riskLevel}`} size="small"/>
         <Chip label={`Conformité ${project.complianceScore}%`} size="small"/>
       </Box>
 
@@ -760,66 +1108,16 @@ useEffect(() => {
             </Box>
           </CardContent></Card>
 
-          {/* Phases */}
-          <Card sx={{mb:3}}><CardContent>
-            <Typography variant="h6">Phases du projet</Typography>
-            <Stepper orientation="vertical">
-              {phases.map((ph,i)=>(
-                <Step key={i} active={ph.status!=='pending'} completed={ph.status==='completed'}>
-                  <StepLabel icon={
-                    ph.status==='completed'?<CheckCircle2 size={20} color="success"/>
-                    :ph.status==='in-progress'?<Activity size={20}/>
-                    :<Clock size={20}/>
-                  }>
-                    <Box>
-                      <Typography sx={{fontWeight:ph.status==='pending'?'regular':'medium'}}>{ph.name}</Typography>
-                      <Typography variant="caption" color="text.secondary" display="flex" alignItems="center">
-                        <Calendar size={14} style={{marginRight:4}}/> {ph.date}
-                      </Typography>
-                    </Box>
-                  </StepLabel>
-                </Step>
-              ))}
-            </Stepper>
-          </CardContent></Card>
 
           {/* Tabs */}
           <Card>
             <Tabs value={tab} onChange={(_,v)=>setTab(v)}>
-              <Tab label="Risques"/><Tab label="Commentaires"/><Tab label="Détails IA"/><Tab label="Audit"/><Tab label="Historique"/>
+              <Tab label="Résultat d'évaluation"/><Tab label="Commentaires"/><Tab label="Évaluation & détails IA"/><Tab label="Audit"/><Tab label="Historique"/>
             </Tabs>
             <Divider/>
             <CardContent>
               {/* 0 — Risques */}
-              {tab===0 && (
-                <TableContainer>
-                  <Table size="small">
-                    <TableHead><TableRow>
-                      <TableCell>Niveau</TableCell><TableCell>Catégorie</TableCell><TableCell>Description</TableCell>
-                      <TableCell>Impact</TableCell><TableCell>Probabilité</TableCell><TableCell>Statut</TableCell><TableCell>Date</TableCell>
-                    </TableRow></TableHead>
-                    <TableBody>
-                      {risks.map(r=>(
-                        <TableRow key={r.id}>
-                          <TableCell>
-                            <Chip icon={
-                              r.level==='high'?<ShieldAlert size={16}/>
-                              :r.level==='medium'?<AlertTriangle size={16}/>
-                              :<CheckCircle2 size={16}/>
-                            } label={r.level} size="small"/>
-                          </TableCell>
-                          <TableCell>{r.category}</TableCell>
-                          <TableCell>{r.description}</TableCell>
-                          <TableCell>{r.impact}</TableCell>
-                          <TableCell>{r.probability}</TableCell>
-                          <TableCell>{r.status}</TableCell>
-                          <TableCell>{r.date}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              )}
+              {tab === 0 && <EvaluationRisks />}
 
               {/* 1 — Commentaires */}
               {tab===1 && (
@@ -829,7 +1127,7 @@ useEffect(() => {
                     <Box textAlign="right" mt={1}>
                       <Button variant="contained" onClick={async()=>{
                         if(!newComment.trim())return
-                        const r = await fetch(`http://127.0.0.1:8000/projects/${id}/comments`,{
+                        const r = await api(`/projects/${id}/comments`,{
                           method:'POST',
                           headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${t}` },
                           body:JSON.stringify({content:newComment})
@@ -856,7 +1154,7 @@ useEffect(() => {
                                   <TextField fullWidth multiline value={editContent} onChange={e=>setEditContent(e.target.value)}/>
                                   <Box mt={1}>
                                     <Button size="small" variant="contained" onClick={async()=>{
-                                      const r = await fetch(`http://127.0.0.1:8000/projects/${id}/comments/${c.id}`,{
+                                      const r = await api(`/projects/${id}/comments/${c.id}`,{
                                         method:'PUT',
                                         headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${t}` },
                                         body:JSON.stringify({content:editContent})
@@ -876,7 +1174,7 @@ useEffect(() => {
                                     <Button size="small" onClick={()=>{ setEditId(c.id); setEditContent(c.content) }}>Modifier</Button>
                                     <Button size="small" color="error" onClick={async()=>{
                                       if(!window.confirm('Supprimer ?'))return
-                                      const r = await fetch(`http://127.0.0.1:8000/projects/${id}/comments/${c.id}`,{
+                                      const r = await api(`/projects/${id}/comments/${c.id}`,{
                                         method:'DELETE',
                                         headers:{ Authorization:`Bearer ${t}` }
                                       })
@@ -896,187 +1194,430 @@ useEffect(() => {
                 </>
               )}
 
-              {/* 2 — Détails IA */}
+
 {/* 2 — Détails IA */}
 {tab === 2 && (
   <Box>
-    {/* Stepper en haut de l’onglet Détails IA */}
     <Stepper activeStep={activeStep} alternativeLabel sx={{ mb: 3 }}>
-            {steps.map((label) => (
-              <Step key={label} completed={isStepReady(steps.indexOf(label))}>
-                <StepLabel>{label}</StepLabel>
-              </Step>
-            ))}
-          </Stepper>
+      {steps.map((label) => (
+        <Step key={label} completed={isStepReady(steps.indexOf(label))}>
+          <StepLabel>{label}</StepLabel>
+        </Step>
+      ))}
+    </Stepper>
 
-    {/* Panel for Étape 1: Importer modèle */}
-                  {/* Etape 1: Import modèle */}
-                  {activeStep === 0 && (
-                    <Card sx={{ mt: 3 }}>
-                      <CardContent>
-                        <Typography variant="h6" gutterBottom>
-                          Étape 1: Importer le modèle (ZIP)
-                        </Typography>
-                        <Box mb={2}>
-                          <Button
-                            variant="outlined"
-                            startIcon={<Download size={18}/>} 
-                            onClick={downloadWithAuth(
-                              `http://127.0.0.1:8000/templates/model`, t, 'template.zip'
-                            )}
-                          >
-                            Télécharger le template
-                          </Button>
-                        </Box>
-                        <DropArea
-                          onDrop={onDrop}
-                          accept={{ 'application/zip': ['.zip'] }}
-                          placeholder="Glissez ou cliquez pour ajouter un ZIP"
-                        />
-                        {zipError && <Typography color="error" sx={{ mt:2 }}>{zipError}</Typography>}
+    {/* Étape 1: Importer le modèle (ZIP) */}
+    {activeStep === 0 && (
+      <Card sx={{ mt: 3 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            Étape 1 : Importer le modèle (ZIP)
+          </Typography>
+          <Box mb={2}>
+            <Button
+              variant="outlined"
+              startIcon={<Download size={18} />}
+              onClick={downloadWithAuth(api,
+        `/templates/model`,
+      t,
+      'template.zip'
+            )}
+            >
+              Télécharger le template
+            </Button>
+          </Box>
+          <DropArea
+            onDrop={onDrop}
+            accept={{ "application/zip": [".zip"] }}
+            placeholder="Glissez ou cliquez pour ajouter un ZIP"
+          />
+          {zipError && (
+            <Typography color="error" sx={{ mt: 2 }}>
+              {zipError}
+            </Typography>
+          )}
 
-                        {modelFiles.length > 0 && (
-                          <Box sx={{ mt:2 }}>
-                            <Typography variant="subtitle2">Aperçu des fichiers importés :</Typography>
-                            <List dense>
-                              {modelFiles.map(fileName => (
-                                <ListItem key={fileName}>
-                                  <ListItemAvatar>
-                                    <Avatar><ArrowLeft size={16}/></Avatar>
-                                  </ListItemAvatar>
-                                  <ListItemText primary={fileName}/>
-                                </ListItem>
-                              ))}
-                            </List>
-                          </Box>
-                        )}
+          {modelFiles.length > 0 && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="subtitle2">
+                Aperçu des fichiers importés :
+              </Typography>
+              <List dense>
+                {modelFiles.map((fileName) => (
+                  <ListItem key={fileName}>
+                    <ListItemAvatar>
+                      <Avatar>
+                        <ArrowLeft size={16} />
+                      </Avatar>
+                    </ListItemAvatar>
+                    <ListItemText primary={fileName} />
+                  </ListItem>
+                ))}
+              </List>
+            </Box>
+          )}
 
-                        <Box sx={{ mt:3, display:'flex', justifyContent:'flex-end', gap:2 }}>
-                          <Button variant="contained" onClick={handleNext} disabled={!isStepReady(0)}>
-                            Suivant
-                          </Button>
-                        </Box>
-                      </CardContent>
-                    </Card>
-                  )}
+          <Box
+            sx={{
+              mt: 3,
+              display: "flex",
+              justifyContent: "flex-end",
+              gap: 2,
+            }}
+          >
+            <Button
+              variant="contained"
+              onClick={handleNext}
+              disabled={!isStepReady(0)}
+            >
+              Suivant
+            </Button>
+          </Box>
+        </CardContent>
+      </Card>
+    )}
 
-                  {/* Etape 2: Dataset entraînement */}
-                  {activeStep === 1 && (
-                    <Card sx={{ mt:3 }}>
-                      <CardContent>
-                        <Typography variant="h6">Étape 2: Dataset entraînement (CSV)</Typography>
-                        <DropArea
-                          onDrop={onDropDataset}
-                          accept={{ 'text/csv': ['.csv'] }}
-                          placeholder="Glissez ou cliquez pour ajouter un CSV d’entraînement"
-                        />
-                        {zipError && <Typography color="error" sx={{ mt:2 }}>{zipError}</Typography>}
+    {/* Étape 2 : Dataset entraînement (CSV) */}
+    {activeStep === 1 && (
+      <Card sx={{ mt: 3 }}>
+        <CardContent>
+          <Typography variant="h6">
+            Étape 2 : Dataset entraînement (CSV)
+          </Typography>
+          <DropArea
+            onDrop={onDropDataset}
+            accept={{ "text/csv": [".csv"] }}
+            placeholder="Glissez ou cliquez pour ajouter un CSV d’entraînement"
+          />
+          {zipError && (
+            <Typography color="error" sx={{ mt: 2 }}>
+              {zipError}
+            </Typography>
+          )}
 
-                        {datasetColumns.length > 0 && (
-                          <Box sx={{ mt:3, display:'flex', justifyContent:'space-between' }}>
-                            <Button variant="outlined" onClick={handleBack}>Précédent</Button>
-                            <Button variant="contained" onClick={handleNext} disabled={!isStepReady(1)}>Suivant</Button>
-                          </Box>
-                        )}
-                      </CardContent>
-                    </Card>
-                  )}
+          {datasetColumns.length > 0 && (
+            <>
+              {/* Affichage des colonnes détectées */}
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="subtitle2">
+                  Colonnes détectées :
+                </Typography>
+                <Box
+                  sx={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 1,
+                    mt: 1,
+                  }}
+                >
+                  {datasetColumns.map((col) => (
+                    <Chip key={col} label={col} size="small" />
+                  ))}
+                </Box>
+              </Box>
 
-                  {/* Etape 3: Features / Target */}
-                  {activeStep === 2 && (
-                    <Card sx={{ mt:3 }}>
-                      <CardContent>
-                        <Typography variant="h6">Étape 3: Features / Target / Sensitives</Typography>
-                        {/* Autocomplete, Select UI here */}
-                        <Box sx={{ mt:3, display:'flex', justifyContent:'space-between' }}>
-                          <Button variant="outlined" onClick={handleBack}>Précédent</Button>
-                          <Button variant="contained" onClick={handleNext} disabled={!isStepReady(2)}>Suivant</Button>
-                        </Box>
-                      </CardContent>
-                    </Card>
-                  )}
+              <Box
+                sx={{
+                  mt: 3,
+                  display: "flex",
+                  justifyContent: "space-between",
+                }}
+              >
+                <Button variant="outlined" onClick={handleBack}>
+                  Précédent
+                </Button>
+                <Button
+                  variant="contained"
+                  onClick={handleNext}
+                  disabled={!isStepReady(1)}
+                >
+                  Suivant
+                </Button>
+              </Box>
+            </>
+          )}
+        </CardContent>
+      </Card>
+    )}
+     {/* Étape 3 : Dataset test (CSV) */}
+    {activeStep === 2 &&  (
+      <Card sx={{ mt: 3 }}>
+        <CardContent>
+          <Typography variant="h6">Étape 3 : Dataset test (CSV)</Typography>
+          <DropArea
+            onDrop={onDropTestDataset}
+            accept={{ "text/csv": [".csv"] }}
+            placeholder="Glissez ou cliquez pour ajouter un CSV test"
+          />
+          {testDatasetColumns.length > 0 && (
+            <Box
+              sx={{
+                mt: 2,
+                display: "flex",
+                justifyContent: "space-between",
+              }}
+            >
+              <Button variant="outlined" onClick={handleBack}>
+                Précédent
+              </Button>
+              <Button
+                variant="contained"
+                onClick={handleNext}
+                disabled={!isStepReady(2)}
+              >
+                Suivant
+              </Button>
+            </Box>
+          )}
+        </CardContent>
+      </Card>
+    )}
+    {/* Étape 4 : Features / Target / Sensitives */}
+    {activeStep === 3 && (
+      <Card sx={{ mt: 3 }}>
+        <CardContent>
+          <Typography variant="h6">
+            Étape 4 : Choix des features, de la target et des colonnes sensibles
+          </Typography>
 
-                  {/* Etape 4: Config YAML */}
-                  {activeStep === 3 && (
-                    <Card sx={{ mt:3 }}>
-                      <CardContent>
-                        <Typography variant="h6">Étape 4: Modifier config.yaml</Typography>
-                        {/* TextField YAML */}
-                        <Box sx={{ mt:3, display:'flex', justifyContent:'space-between' }}>
-                          <Button variant="outlined" onClick={handleBack}>Précédent</Button>
-                          <Button variant="contained" onClick={handleNext}>Suivant</Button>
-                        </Box>
-                      </CardContent>
-                    </Card>
-                  )}
+          <Box sx={{ mt: 2 }}>
+            <Autocomplete
+              multiple
+              options={datasetColumns}
+              value={selectedFeatures}
+              onChange={(_, v) => setSelectedFeatures(v)}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Variables explicatives"
+                  placeholder="Sélectionnez les variables explicatives"
+                />
+              )}
+            />
+          </Box>
 
-                  {/* Etape 5: Entraînement */}
-                  {activeStep === 4 && (
-                    <Card sx={{ mt:3 }}>
-                      <CardContent>
-                        <Typography variant="h6">Étape 5: Lancement de l’entraînement</Typography>
-                        {!runId ? (
-                          <Button variant="contained" onClick={startTraining} disabled={trainingLoading || !trainDatasetId} startIcon={trainingLoading ? <CircularProgress size={20}/> : null}>
-                            {trainingLoading ? 'Démarrage…' : 'Démarrer'}
-                          </Button>
-                        ) : (
-                          <Box mt={2}>
-                            <Typography variant="subtitle2">Logs run #{runId}:</Typography>
-                            <List sx={{ maxHeight:300, overflow:'auto', bgcolor:'background.paper', border:'1px solid divider' }}>
-                              {trainingLogs.map((l,i)=>(<ListItem key={i} dense><Typography component="pre" variant="body2" sx={{ m:0 }}>{l}</Typography></ListItem>))}
-                            </List>
-                            {!trainingFinished ? <Typography variant="caption">En cours…</Typography> : <Typography color="success.main">Entraînement terminé ✔</Typography>}
-                          </Box>
-                        )}
-                        <Box sx={{ mt:3, display:'flex', justifyContent:'space-between' }}>
-                          <Button variant="outlined" onClick={handleBack}>Précédent</Button>
-                          <Button variant="contained" onClick={handleNext} disabled={!isStepReady(4)}>Suivant</Button>
-                        </Box>
-                      </CardContent>
-                    </Card>
-                  )}
+          <Box sx={{ mt: 2 }}>
+            <Autocomplete
+              options={datasetColumns}
+              value={selectedTarget}
+              onChange={(_, v) => setSelectedTarget(v)}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Variable cible"
+                  placeholder="Sélectionnez la variable cible"
+                />
+              )}
+            />
+          </Box>
 
-                  {/* Etape 6: Dataset test */}
-                  {activeStep === 5 && (
-                    <Card sx={{ mt:3 }}>
-                      <CardContent>
-                        <Typography variant="h6">Étape 6: Dataset test (CSV)</Typography>
-                        <DropArea onDrop={onDropTestDataset} accept={{ 'text/csv':['.csv'] }} placeholder="Glissez ou cliquez pour ajouter un CSV test"/>
-                        {testDatasetColumns.length>0 && (
-                          <Box sx={{ mt:2, display:'flex', justifyContent:'space-between' }}>
-                            <Button variant="outlined" onClick={handleBack}>Précédent</Button>
-                            <Button variant="contained" onClick={handleNext} disabled={!isStepReady(5)}>Suivant</Button>
-                          </Box>
-                        )}
-                      </CardContent>
-                    </Card>
-                  )}
+          <Box sx={{ mt: 2 }}>
+            <Autocomplete
+              multiple
+              options={datasetColumns}
+              value={selectedSensitive}
+              onChange={(_, v) => setSelectedSensitive(v)}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Colonnes sensibles"
+                  placeholder="Sélectionnez les colonnes sensibles"
+                />
+              )}
+            />
+          </Box>
 
-                  {/* Etape 7: Évaluation */}
-                  {activeStep === 6 && (
-                    <Card sx={{ mt:3 }}>
-                      <CardContent>
-                        <Typography variant="h6">Étape 7: Lancer l’évaluation</Typography>
-                        {!evalRunId ? (
-                          <Button variant="contained" onClick={startEval} disabled={!runId||!testDatasetId||evalLoading}>
-                            {evalLoading?'Démarrage…':'Lancer'}
-                          </Button>
-                        ) : (
-                          <Box mt={2}>
-                            <Typography>Logs évaluation #{evalRunId}:</Typography>
-                            <List sx={{ maxHeight:300, overflow:'auto', bgcolor:'#fafafa', border:'1px solid #ddd' }}>
-                              {evalLogs.map((l,i)=>(<ListItem key={i}><Typography component="pre" variant="body2">{l}</Typography></ListItem>))}
-                            </List>
-                            {evalFinished ? <Typography color="success.main">Évaluation terminée ✔</Typography> : <Typography variant="caption">En cours…</Typography>}
-                          </Box>
-                        )}
-                        <Box sx={{ mt:3, display:'flex', justifyContent:'flex-start' }}>
-                          <Button variant="outlined" onClick={handleBack}>Précédent</Button>
-                        </Box>
-                      </CardContent>
-                    </Card>
-                  )}
+          <Box
+            sx={{
+              mt: 3,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
+            <Button variant="outlined" onClick={handleBack}>
+              Précédent
+            </Button>
+            <Button
+              variant="contained"
+              onClick={handleNextStep4}
+              disabled={!isStepReady(3)}
+            >
+       Suivant
+     </Button>
+          </Box>
+        </CardContent>
+      </Card>
+    )}
 
+    {/* Étape 5 : Config YAML */}
+    {activeStep === 4 && (
+      <Card sx={{ mt: 3 }}>
+        <CardContent>
+          <Typography variant="h6">Étape 5 : Modifier config.yaml</Typography>
+          {configError ? (
+            <Typography color="error" sx={{ mt: 2 }}>
+              {configError}
+            </Typography>
+          ) : (
+            <TextField
+              fullWidth
+              multiline
+              minRows={10}
+              value={configYAML}
+              onChange={(e) => {setConfigYAML(e.target.value)
+              setConfigSaved(false) }  
+              }
+              sx={{ mt: 2, fontFamily: "monospace" }}
+            />
+          )}
+          <Box
+            sx={{
+              mt: 3,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
+            <Button variant="outlined" onClick={handleBack}>
+              Précédent
+            </Button>
+             <Button variant="outlined" onClick={saveConfigYaml} disabled={!!configError}>
+   Enregistrer
+ </Button>
+             <Button
+              variant="contained"
+              onClick={handleNext}
+              disabled={!isStepReady(4)}
+            >
+              Suivant
+             </Button>
+          </Box>
+        </CardContent>
+      </Card>
+    )}
+
+    {/* Étape 6 : Lancement de l’entraînement */}
+    {activeStep === 5 && (
+      <Card sx={{ mt: 3 }}>
+        <CardContent>
+          <Typography variant="h6">
+            Étape 6 : Lancement de l’entraînement
+          </Typography>
+          {!runId ? (
+            <Button
+              variant="contained"
+              onClick={startTraining}
+              disabled={trainingLoading || !trainDatasetId}
+              startIcon={
+                trainingLoading ? <CircularProgress size={20} /> : null
+              }
+            >
+              {trainingLoading ? "Démarrage…" : "Démarrer"}
+            </Button>
+          ) : (
+            <Box mt={2}>
+              <Typography variant="subtitle2">
+                Logs run #{runId} :
+              </Typography>
+              <List
+                sx={{
+                  maxHeight: 300,
+                  overflow: "auto",
+                  bgcolor: "background.paper",
+                  border: "1px solid divider",
+                }}
+              >
+                {trainingLogs.map((l, i) => (
+                  <ListItem key={i} dense>
+                    <Typography component="pre" variant="body2" sx={{ m: 0 }}>
+                      {l}
+                    </Typography>
+                  </ListItem>
+                ))}
+              </List>
+              {!trainingFinished ? (
+                <Typography variant="caption">En cours…</Typography>
+              ) : (
+                <Typography color="success.main">
+                  Entraînement terminé ✔
+                </Typography>
+              )}
+            </Box>
+          )}
+          <Box
+            sx={{
+              mt: 3,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
+            <Button variant="outlined" onClick={handleBack}>
+              Précédent
+            </Button>
+           
+             <Button
+              variant="contained"
+              onClick={handleNext}
+              disabled={!isStepReady(5)}
+            >
+              Suivant
+             </Button>
+          </Box>
+        </CardContent>
+      </Card>
+    )}
+
+
+    {/* Étape 7 : Lancer l’évaluation */}
+    {activeStep === 6 && (
+      <Card sx={{ mt: 3 }}>
+        <CardContent>
+          <Typography variant="h6">
+            Étape 7 : Lancer l’évaluation
+          </Typography>
+          {!evalRunId ? (
+            <Button
+            variant="contained"
+            onClick={startEval}
+            disabled={!runId || !testDatasetId || !dataConfigId || evalLoading}
+          >
+              {evalLoading ? "Démarrage…" : "Lancer"}
+            </Button>
+          ) : (
+            <Box mt={2}>
+              <Typography>Logs évaluation #{evalRunId} :</Typography>
+              <List
+               sx={{
+                  maxHeight: 300,
+                  overflow: "auto",
+                  bgcolor: "background.paper",
+                  border: "1px solid divider",
+                }}
+              >
+                {evalLogs.map((l, i) => (
+                  <ListItem key={i}>
+                    <Typography component="pre" variant="body2">
+                      {l}
+                    </Typography>
+                  </ListItem>
+                ))}
+              </List>
+              {evalFinished ? (
+                <Typography color="success.main">
+                  Évaluation terminée ✔
+                </Typography>
+              ) : (
+                <Typography variant="caption">En cours…</Typography>
+              )}
+            </Box>
+          )}
+          <Box sx={{ mt: 3, display: "flex", justifyContent: "flex-start" }}>
+            <Button variant="outlined" onClick={handleBack}>
+              Précédent
+            </Button>
+          </Box>
+        </CardContent>
+      </Card>
+    )}
 
     {/* --- affichage des détails IA uniquement si un modèle a déjà été importé --- */}
     {project.aiDetails && (
@@ -1097,80 +1638,108 @@ useEffect(() => {
           </Grid>
           <Grid item xs={6}>
             <Typography>
-              <strong>Framework :</strong> {project.aiDetails.framework}
+              <strong>Environnement :</strong> {project.aiDetails.framework}
             </Typography>
           </Grid>
           <Grid item xs={6}>
             <Typography>
-              <strong>Dataset :</strong> {project.aiDetails.datasetSize}
+              <strong>Nombre de données de test :</strong> {project.aiDetails.datasetSize}
             </Typography>
           </Grid>
           <Grid item xs={6}>
             <Typography>
-              <strong>Features :</strong> {project.aiDetails.featuresCount}
+              <strong>Nombre de caractéristiques  :</strong> {project.aiDetails.featuresCount}
             </Typography>
           </Grid>
           <Grid item xs={6}>
+            {project.aiDetails.type === 'regression' ? (
             <Typography>
-              <strong>Accuracy :</strong> {project.aiDetails.accuracy}%
+              <strong>R² :</strong>{' '}
+              {project.aiDetails.r2 != null
+                ? project.aiDetails.r2.toFixed(4)
+                : '–'}
             </Typography>
+          ) : (
+            <Typography>
+              <strong>Exactitude :</strong>{' '}
+              {(project.aiDetails.accuracy * 100).toFixed(2)}%
+            </Typography>
+          )}
           </Grid>
           <Grid item xs={6}>
             <Typography>
-              <strong>Training time :</strong> {project.aiDetails.trainingTime}
+              <strong>Temps d’entraînement :</strong> {project.aiDetails.trainingTime}
             </Typography>
           </Grid>
         </Grid>
-        <Box mt={4}>
-          <PieChart
-            title="Conformité"
-            labels={['OK', 'Écart']}
-            data={[project.complianceScore, 100 - project.complianceScore]}
-            height={200}
-          />
-        </Box>
       </>
     )}
   </Box>
 )}
+
+
     
               {/* 3 — Audit */}
-              {tab===3 && (
-                <Box>
-                  {checklist.map(item=>(
-                    <Accordion key={item.id} sx={{mb:1}}>
-                      <AccordionSummary expandIcon={<ExpandMoreIcon/>}>
-                        <Box sx={{flexGrow:1}}>
-                          <Typography variant="subtitle1">{item.control_name}</Typography>
-                          <Typography variant="caption" color="text.secondary">{item.description}</Typography>
-                        </Box>
-                        <Chip label={`${item.statuses.filter(s=>'done'===s).length}/${item.audit_questions.length}`} size="small" sx={{ml:1}}/>
-                      </AccordionSummary>
-                      <AccordionDetails>
-                        {item.audit_questions.map((aq,idx)=>(
-                          <Box key={idx} display="flex" alignItems="center" mb={2}>
-                            <Box flexGrow={1} display="flex" alignItems="center">
-                              <Typography>Q{idx+1} : {aq.question}</Typography>
-                              <Chip
-                                label={STATUS_LABELS[item.statuses[idx]]}
-                                color={statusColorMap[item.statuses[idx]]}
-                                size="small"
-                                sx={{ml:2,mr:1}}
-                              />
-                              <Chip
-                                label={RESULT_LABELS[item.results[idx]]}
-                                color={resultColorMap[item.results[idx]]}
-                                size="small"
-                              />
-                            </Box>
-                            <Button size="small" onClick={()=>openDlg(item,idx)}>Évaluer</Button>
-                          </Box>
-                        ))}
-                      </AccordionDetails>
-                    </Accordion>
-                  ))}
+{tab === 3 && (
+  <Box>
+    {checklist.map((item) => {
+      console.log('Checklist item ID:', item.id);
+      return (
+        <Accordion key={item.id} sx={{ mb: 1 }}>
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <Box sx={{ flexGrow: 1 }}>
+              <Typography variant="subtitle1">{item.control_name}</Typography>
+              <Typography variant="caption" color="text.secondary">
+                {item.description}
+              </Typography>
+            </Box>
+            <Chip
+              label={`${item.statuses.filter((s) => s === 'done').length}/${item.audit_questions.length}`}
+              size="small"
+              sx={{ ml: 1 }}
+            />
+          </AccordionSummary>
+          <AccordionDetails>
+            {item.audit_questions.map((aq, idx) => (
+              <Box key={idx} display="flex" alignItems="center" mb={2}>
+                <Box flexGrow={1} display="flex" alignItems="center">
+                  <Typography>
+                    Q{idx + 1} : {aq.question}
+                  </Typography>
+                  <Chip
+                    label={STATUS_LABELS[item.statuses[idx]]}
+                    color={statusColorMap[item.statuses[idx]]}
+                    size="small"
+                    sx={{ ml: 2, mr: 1 }}
+                  />
+                  <Chip
+                    label={RESULT_LABELS[item.results[idx]]}
+                    color={resultColorMap[item.results[idx]]}
+                    size="small"
+                  />
                 </Box>
-              )}
+                <Button size="small" onClick={() => openDlg(item, idx)}>
+                  Évaluer
+                </Button>
+                <Button
+                  size="small"
+                  sx={{ ml: 2 }}
+                  onClick={() => {
+                    console.log(`Open NonConformities Dialog for itemId: ${item.id}, questionIdx: ${idx}`);
+                    openNcDialog(item.id, idx);
+                  }}
+                >
+                  Non-conformités
+                </Button>
+              </Box>
+            ))}
+          </AccordionDetails>
+        </Accordion>
+      )
+    })}
+  </Box>
+)}
+
 
               {/* 4 — Historique */}
               {tab===4 && <Typography>Pas encore d’historique.</Typography>}
@@ -1180,23 +1749,27 @@ useEffect(() => {
 
         {/* SIDEBAR */}
         <Grid item xs={12} md={4}>
-          <Card sx={{mb:3}}><CardContent>
-            <Typography variant="h6" gutterBottom>Informations</Typography>
-            <Typography><strong>Responsable :</strong> {project.owner}</Typography>
-            <Typography><strong>Créé le :</strong> {project.created}</Typography>
-            <Typography><strong>MàJ :</strong> {project.updated}</Typography>
-            <Typography><strong>Domaine :</strong> {project.domain}</Typography>
-          </CardContent></Card>
+          <Card sx={{mb:3}}>
+  <CardContent>
+    <Typography variant="h6" gutterBottom>Informations</Typography>
+    <Typography><strong>Responsable :</strong> {project.owner ?? "Non renseigné"}</Typography>
+    <Typography><strong>Créé le :</strong> {project.createdAt ? project.createdAt.slice(0, 10) : "N/A"}</Typography>
+    <Typography><strong>Mise à jour :</strong> {project.updatedAt ? project.updatedAt.slice(0, 10) : "N/A"}</Typography>
+    <Typography><strong>Catégorie :</strong> {project.category ?? "Non renseigné"}</Typography>
+  </CardContent>
+</Card>
           <Card><CardContent>
             <Typography variant="h6" gutterBottom>Équipe</Typography>
             <List>
-              {team.map(m=>(
-                <ListItem key={m.name}>
-                  <ListItemAvatar><Avatar src={m.avatar}>{m.name.charAt(0)}</Avatar></ListItemAvatar>
-                  <ListItemText primary={m.name} secondary={m.role}/>
-                </ListItem>
-              ))}
-            </List>
+    {project.teamMembers?.map((m) => (
+    <ListItem key={m.name}>
+      <ListItemAvatar>
+        <Avatar src={m.avatar}>{m.name.charAt(0)}</Avatar>
+      </ListItemAvatar>
+      <ListItemText primary={m.name} secondary={m.role} />
+    </ListItem>
+  ))}
+</List>
           </CardContent></Card>
         </Grid>
       </Grid>
@@ -1251,8 +1824,9 @@ useEffect(() => {
                         <Button
                           size="small"
                           onClick={downloadWithAuth(
-                            `http://127.0.0.1:8000/projects/${id}/proofs/${exist.proof_id}`,
-                            t,
+                            api,
+                            `/projects/${id}/proofs/${exist.proof_id}`,
+                           t,
                             exist.filename
                           )}
                         >
@@ -1262,7 +1836,8 @@ useEffect(() => {
                       <Button
                         size="small"
                         onClick={downloadWithAuth(
-                          `http://127.0.0.1:8000/projects/${id}/checklist/${activeItem.id}/proofs/template/${refId}`,
+                          api,
+                          `/projects/${id}/checklist/${activeItem.id}/proofs/template/${refId}`,
                           t,
                           `${refId}.docx`
                         )}
@@ -1291,6 +1866,183 @@ useEffect(() => {
           </Button>
         </DialogActions>
       </Dialog>
+      <Dialog
+  open={ncDialogOpen}
+  onClose={() => setNcDialogOpen(false)}
+  fullWidth
+  maxWidth="sm"
+>
+  <DialogTitle>Non-conformités de la question {ncQuestionIndex}</DialogTitle>
+  <DialogContent dividers>
+  {ncLoading && (
+    <Box textAlign="center" py={2}>
+      <CircularProgress />
+    </Box>
+  )}
+
+  {ncError && (
+    <Typography color="error" gutterBottom>
+      {ncError}
+    </Typography>
+  )}
+
+  {!ncLoading && nonConformites.length === 0 && (
+    <Typography>Aucune non-conformité trouvée.</Typography>
+  )}
+
+  {!ncLoading && ncEditing && (
+    <>
+      <FormControl fullWidth margin="dense">
+        <InputLabel>Type de non-conformité</InputLabel>
+        <Select
+          value={ncEditing.type_nc}
+          label="Type de non-conformité"
+          onChange={(e) =>
+            setNcEditing((prev) => prev && { ...prev, type_nc: e.target.value as 'mineure' | 'majeure' })
+          }
+        >
+          <MenuItem value="mineure">Mineure</MenuItem>
+          <MenuItem value="majeure">Majeure</MenuItem>
+        </Select>
+      </FormControl>
+
+    
+      <TextField
+        fullWidth
+        margin="dense"
+        label="Date limite de correction"
+        type="date"
+        InputLabelProps={{ shrink: true }}
+        value={ncEditing.deadline_correction ? ncEditing.deadline_correction.slice(0, 10) : ''}
+        onChange={(e) => {
+          const dateStr = e.target.value;
+          // format ISO date string en UTC à minuit
+          const isoDate = dateStr ? new Date(dateStr).toISOString() : '';
+          setNcEditing((prev) => prev && { ...prev, deadline_correction: isoDate });
+        }}
+      />
+
+      <FormControl fullWidth margin="dense">
+        <InputLabel>Statut</InputLabel>
+        <Select
+          value={ncEditing.statut}
+          label="Statut"
+          onChange={(e) =>
+            setNcEditing((prev) =>
+              prev && {
+                ...prev,
+                statut: e.target.value as 'non_corrigee' | 'en_cours' | 'corrigee',
+              }
+            )
+          }
+        >
+          <MenuItem value="non_corrigee">Non corrigée</MenuItem>
+          <MenuItem value="en_cours">En cours</MenuItem>
+          <MenuItem value="corrigee">Corrigée</MenuItem>
+        </Select>
+      </FormControl>
+    </>
+  )}
+</DialogContent>
+<Box mt={3}>
+  <Typography variant="subtitle1" gutterBottom>
+    Actions correctives
+  </Typography>
+  {actionsLoading && <Typography>Chargement des actions correctives...</Typography>}
+  {actionsError && <Typography color="error">{actionsError}</Typography>}
+  {!actionsLoading && actionsCorrectives.length === 0 && (
+    <Typography>Aucune action corrective.</Typography>
+  )}
+  {!actionsLoading && actionsCorrectives.length > 0 && (
+    <List dense>
+      {actionsCorrectives.map(action => (
+        <ListItem
+          key={action.id}
+          secondaryAction={
+            <>
+              <Button size="small" onClick={() => editActionCorrective(action)}>Modifier</Button>
+              <Button size="small" color="error" onClick={() => deleteActionCorrective(action.id)}>Supprimer</Button>
+            </>
+          }
+        >
+          <ListItemText
+            primary={action.description}
+            secondary={`Deadline : ${action.deadline ? action.deadline.slice(0, 10) : '–'} — Statut : ${STATUS_LABELS[action.status] ?? action.status}`}
+          />
+        </ListItem>
+      ))}
+    </List>
+  )}
+  <Button
+    variant="outlined"
+    sx={{ mt: 2 }}
+    onClick={() => {
+      if (!ncItemId) return;
+      setActionEditing({
+        id: 0,
+        description: '',
+        deadline: null,
+        status: 'to-do',
+        checklist_item_id: ncItemId,
+        non_conformite_id: null,
+        responsible_user_id: null,
+      })
+      setActionFormOpen(true)
+    }}
+  >
+    Ajouter une action corrective
+  </Button>
+</Box>
+
+<DialogActions>
+  <Button onClick={() => setNcDialogOpen(false)}>Fermer</Button>
+  <Button onClick={saveNonConformite} disabled={ncLoading || !ncEditing}>
+    Sauvegarder
+  </Button>
+</DialogActions>
+
+</Dialog>
+<Dialog open={actionFormOpen} onClose={() => setActionFormOpen(false)} fullWidth maxWidth="sm">
+  <DialogTitle>{actionEditing?.id === 0 ? 'Nouvelle action corrective' : 'Modifier action corrective'}</DialogTitle>
+  <DialogContent>
+    <TextField
+      label="Description"
+      fullWidth
+      multiline
+      minRows={3}
+      value={actionEditing?.description || ''}
+      onChange={e => setActionEditing(prev => prev && { ...prev, description: e.target.value })}
+      margin="dense"
+    />
+    <TextField
+      label="Date limite"
+      type="date"
+      fullWidth
+      margin="dense"
+      InputLabelProps={{ shrink: true }}
+      value={actionEditing?.deadline ? actionEditing.deadline.slice(0, 10) : ''}
+      onChange={e => setActionEditing(prev => prev && { ...prev, deadline: e.target.value ? new Date(e.target.value).toISOString() : null })}
+    />
+    <FormControl fullWidth margin="dense">
+      <InputLabel>Statut</InputLabel>
+      <Select
+        value={actionEditing?.status || 'to-do'}
+        onChange={e => setActionEditing(prev => prev && { ...prev, status: e.target.value })}
+        label="Statut"
+      >
+        <MenuItem value="to-do">À faire</MenuItem>
+        <MenuItem value="in-progress">En cours</MenuItem>
+        <MenuItem value="in-review">En révision</MenuItem>
+        <MenuItem value="done">Terminé</MenuItem>
+      </Select>
+    </FormControl>
+  </DialogContent>
+  <DialogActions>
+    <Button onClick={() => setActionFormOpen(false)}>Annuler</Button>
+    <Button variant="contained" onClick={saveActionCorrective}>Sauvegarder</Button>
+  </DialogActions>
+</Dialog>
+
     </Box>
   )
 }
