@@ -16,7 +16,7 @@ The project is split into two parts:
 ## Prerequisites
 
 ### Backend
-- Python 3.10 or higher
+- Python 3.10 you might face some problems installing requirements with python version 3.13 so you better remove versions from requirements and let pip handle conflicts
 - pip (Python package installer)
 - SQLite (default) or another supported database
 
