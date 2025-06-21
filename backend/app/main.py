@@ -1,3 +1,4 @@
+# FastAPI app initialization and router inclusion
 #app/main.py
 import logging
 from fastapi import FastAPI, Request

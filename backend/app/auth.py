@@ -1,3 +1,4 @@
+# Authentication routes and helpers
 import os
 from datetime import datetime, timedelta
 from typing import Optional
