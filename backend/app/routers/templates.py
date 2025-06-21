@@ -9,6 +9,8 @@ from fastapi.responses import StreamingResponse
 
 from app.auth import get_current_user, User
 
+# BLOC D'INITIALISATION DU ROUTER
+# Le router est configuré pour toutes les routes liées aux templates.
 router = APIRouter(prefix="/templates", tags=["templates"])
 
 @router.get("/model", summary="Télécharge le template de projet modèle")
@@ -21,6 +23,17 @@ def download_model_template(_: User = Depends(get_current_user)):
     ├── requirements.txt
     └── README.md
     """
+    # BLOC DE GÉNÉRATION DYNAMIQUE DE L'ARCHIVE ZIP
+    # Cette route génère et sert une archive ZIP "à la volée", sans jamais
+    # la sauvegarder sur le disque du serveur.
+    # 1.  Un buffer binaire en mémoire (`BytesIO`) est créé pour agir comme un fichier temporaire.
+    # 2.  La bibliothèque `zipfile` est utilisée pour écrire directement dans ce buffer.
+    # 3.  Les contenus des différents fichiers du template, définis plus bas comme des
+    #     constantes, sont écrits un par un dans l'archive.
+    # 4.  `buf.seek(0)` réinitialise le curseur du buffer au début pour la lecture.
+    # 5.  Une `StreamingResponse` est utilisée pour envoyer le contenu du buffer au client,
+    #     ce qui est efficace en termes de mémoire. L'en-tête `Content-Disposition`
+    #     force le téléchargement de la réponse comme un fichier nommé `model_template.zip`.
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         now = datetime.utcnow().isoformat()
@@ -40,7 +53,12 @@ def download_model_template(_: User = Depends(get_current_user)):
         headers={"Content-Disposition": 'attachment; filename="model_template.zip"'},
     )
 
-# ────────────────────────── Contenu des fichiers ────────────────────────────
+# ────────────────────────── Contenu des fichiers du Template ────────────────────────────
+# BLOC DE CONTENU DES FICHIERS DU TEMPLATE
+# Les constantes ci-dessous contiennent le code source et le contenu des fichiers
+# qui sont inclus dans l'archive ZIP générée par la route ci-dessus.
+
+# `MODEL_PY`: Définit une architecture de modèle PyTorch simple et flexible.
 MODEL_PY = """\
 import torch.nn as nn
 
@@ -59,6 +77,10 @@ class MyModel(nn.Module):
         return self.net(x)
 """
 
+# `TRAIN_PY`: Fournit un script d'entraînement complet et fonctionnel qui peut être
+# exécuté en ligne de commande (ce que fera le conteneur Docker). Il montre comment
+# charger les données, configurer le modèle, choisir la bonne fonction de perte,
+# et sauvegarder le modèle entraîné.
 TRAIN_PY = """\
 import argparse, logging, yaml, pandas as pd, torch
 from pathlib import Path
@@ -138,6 +160,7 @@ if __name__ == "__main__":
     train_and_save_model(Path(args.data), Path(args.config), Path(args.out))
 """
 
+# `CONFIG_YAML`: Un exemple de fichier de configuration avec les hyperparamètres de base.
 CONFIG_YAML = """\
 ## task: regression, classification ou clustering
 task: classification
@@ -148,12 +171,14 @@ lr: 0.001
 epochs: 50
 """
 
+# `REQUIREMENTS_TXT`: Les dépendances Python minimales pour faire fonctionner le template.
 REQUIREMENTS_TXT = """\
 torch>=2.2
 pandas
 pyyaml
 """
 
+# `README_MD`: Un fichier d'instructions expliquant les règles et conventions du template.
 README_MD = """\
 # Template IA ({date})
 

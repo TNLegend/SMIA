@@ -1,5 +1,23 @@
 # app/template_files.py
-
+# BLOC DE CONTENU DU SCRIPT D'ÉVALUATION
+# La constante `EVALUATE_PY` contient une chaîne de caractères multi-lignes qui est en
+# réalité un script Python complet. Ce script est destiné à être exécuté dans
+# l'environnement Docker isolé lors d'une "évaluation" de modèle.
+#
+# Son rôle est d'orchestrer une évaluation standardisée :
+# 1.  Chargement : Il charge le modèle entraîné par l'utilisateur (`model.pt`),
+#     les données de test, et les fichiers de configuration.
+# 2.  Importation depuis la plateforme : Il a la capacité d'importer des fonctions
+#     directement depuis le code de la plateforme SMIA (monté en volume dans Docker),
+#     notamment la puissante fonction `analyze` du pipeline de métriques.
+# 3.  Prédiction : Il exécute le modèle sur les données de test pour générer des prédictions.
+# 4.  Analyse Complète : Il appelle `analyze` pour calculer un large éventail de
+#     métriques : performance, équité (fairness), robustesse, dérive, etc.
+# 5.  Explicabilité (XAI) : Il génère et sauvegarde des graphiques pour l'importance
+#     globale des features (SHAP) et l'explication d'une prédiction locale (LIME).
+# 6.  Export des Résultats : Son principal livrable est un fichier `metrics.json`,
+#     qui contient tous les résultats de l'analyse, ainsi que les images des graphiques.
+#     Ces fichiers sont ensuite récupérés par la plateforme pour être affichés à l'utilisateur.
 EVALUATE_PY = """\
 \"\"\"Évaluation offline : calcule metrics.json + figures SHAP / LIME.\"\"\" 
 

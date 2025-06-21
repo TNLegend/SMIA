@@ -11,7 +11,6 @@
       <change beforePath="$PROJECT_DIR$/app/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/main.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/metrics/pipeline.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/metrics/pipeline.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/models.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/models.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/routers/artifacts.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/routers/artifacts.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/routers/dashboard.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/routers/dashboard.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/routers/documents.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/routers/documents.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/routers/evaluations.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/routers/evaluations.py" afterDir="false" />
@@ -21,36 +20,7 @@
       <change beforePath="$PROJECT_DIR$/app/routers/report.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/routers/report.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/routers/teams.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/routers/teams.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/routers/templates.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/routers/templates.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/tasks/cleanup.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/tasks/cleanup.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/tasks/scheduler.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/tasks/scheduler.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/template_files.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/template_files.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/utils/dependencies.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/utils/dependencies.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/utils/files.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/utils/files.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/utils/pdf.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/utils/pdf.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/utils/report_generator.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/utils/report_generator.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/utils/wkhtmltopdf/include/wkhtmltox/dllbegin.inc" beforeDir="false" afterPath="$PROJECT_DIR$/app/utils/wkhtmltopdf/include/wkhtmltox/dllbegin.inc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/utils/wkhtmltopdf/include/wkhtmltox/dllend.inc" beforeDir="false" afterPath="$PROJECT_DIR$/app/utils/wkhtmltopdf/include/wkhtmltox/dllend.inc" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/utils/wkhtmltopdf/include/wkhtmltox/image.h" beforeDir="false" afterPath="$PROJECT_DIR$/app/utils/wkhtmltopdf/include/wkhtmltox/image.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/utils/wkhtmltopdf/include/wkhtmltox/pdf.h" beforeDir="false" afterPath="$PROJECT_DIR$/app/utils/wkhtmltopdf/include/wkhtmltox/pdf.h" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../frontend/src.zip" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/../frontend/src/api/client.ts" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/src/api/client.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../frontend/src/components/EvaluationRisks.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/src/components/EvaluationRisks.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../frontend/src/components/PrivateRoute.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/src/components/PrivateRoute.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../frontend/src/components/ProtectedImage.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/src/components/ProtectedImage.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../frontend/src/components/TeamSelector.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/src/components/TeamSelector.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../frontend/src/context/AuthContext.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/src/context/AuthContext.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../frontend/src/context/TeamContext.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/src/context/TeamContext.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../frontend/src/pages/DocumentForm.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/src/pages/DocumentForm.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../frontend/src/pages/DocumentHistory.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/src/pages/DocumentHistory.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../frontend/src/pages/DocumentView.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/src/pages/DocumentView.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../frontend/src/pages/DocumentsList.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/src/pages/DocumentsList.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../frontend/src/pages/EditProject.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/src/pages/EditProject.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../frontend/src/pages/LandingPage.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/src/pages/LandingPage.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../frontend/src/pages/Login.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/src/pages/Login.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../frontend/src/pages/Settings.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/src/pages/Settings.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../frontend/src/pages/Signup.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/src/pages/Signup.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../frontend/src/pages/TeamDetailPage.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/src/pages/TeamDetailPage.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../frontend/src/pages/Teams.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/../frontend/src/pages/Teams.tsx" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
