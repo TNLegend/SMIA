@@ -1,0 +1,11 @@
+{
+  "features": [
+    "feature_1",
+    "feature_2",
+    "feature_3"
+  ],
+  "sensitive_attrs": [
+    "feature_1",
+    "feature_2"
+  ]
+}

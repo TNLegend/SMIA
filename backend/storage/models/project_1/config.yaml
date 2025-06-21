@@ -1,0 +1,5 @@
+task: classification
+target: target
+hidden: 32
+lr: 0.001
+epochs: 30
